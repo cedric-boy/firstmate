@@ -1,0 +1,76 @@
+=== S1 default typesafe ===
+exit=0
+--stdout
+dispatch-resolve:
+  status: error
+  reason: quota-axi --json returned an invalid snapshot
+--stderr
+dispatch-resolve: error (quota-axi --json returned an invalid snapshot)
+--curl
+ARGV: -sS --max-time 5 -o /tmp/tmp.yI58W4GX5V -w %{http_code} -X POST https://api.typesafe.ai/v1/systemone -H Content-Type: application/json -H @/dev/fd/3 --data-binary @-
+HEADER: Authorization: Bearer ts-key
+ENV: 
+{"model":"jev-latest"}
+
+=== S2 openrouter explicit (env) ===
+exit=0
+--stdout
+dispatch-resolve:
+  status: error
+  reason: quota-axi --json returned an invalid snapshot
+--stderr
+dispatch-resolve: error (quota-axi --json returned an invalid snapshot)
+--curl
+ARGV: -sS --max-time 5 -o /tmp/tmp.o30f5iSmuc -w %{http_code} -X POST https://openrouter.ai/api/alpha/decisions -H Content-Type: application/json -H @/dev/fd/3 --data-binary @-
+HEADER: Authorization: Bearer or-key
+ENV: 
+{"model":"typesafe/jev-1.13"}
+
+=== S3 ambient OPENROUTER key only ===
+exit=0
+--stdout
+--stderr
+dispatch-resolve: off (TYPESAFE_API_KEY absent from the environment and /tmp/tmp.vw8a3XDrFN/home/.env, with TYPESAFE_PROVIDER=typesafe)
+--curl
+
+=== S4 openrouter selected, no key ===
+exit=0
+--stdout
+--stderr
+dispatch-resolve: off (OPENROUTER_API_KEY absent from the environment and /tmp/tmp.vw8a3XDrFN/home/.env, with TYPESAFE_PROVIDER=openrouter)
+--curl
+
+=== S5 unknown provider ===
+exit=2
+--stdout
+--stderr
+error: unknown TYPESAFE_PROVIDER: opernrouter (expected typesafe or openrouter)
+--curl
+
+=== S6 .env selection ===
+exit=0
+--stdout
+dispatch-resolve:
+  status: error
+  reason: quota-axi --json returned an invalid snapshot
+--stderr
+dispatch-resolve: error (quota-axi --json returned an invalid snapshot)
+--curl
+ARGV: -sS --max-time 5 -o /tmp/tmp.LuHF9GGvPb -w %{http_code} -X POST https://openrouter.ai/api/alpha/decisions -H Content-Type: application/json -H @/dev/fd/3 --data-binary @-
+HEADER: Authorization: Bearer dotenv-or
+ENV: 
+{"model":"typesafe/jev-1.13"}
+
+=== S7 env wins over .env ===
+exit=0
+--stdout
+dispatch-resolve:
+  status: error
+  reason: quota-axi --json returned an invalid snapshot
+--stderr
+dispatch-resolve: error (quota-axi --json returned an invalid snapshot)
+--curl
+ARGV: -sS --max-time 5 -o /tmp/tmp.O1ks5WSgRR -w %{http_code} -X POST https://openrouter.ai/api/alpha/decisions -H Content-Type: application/json -H @/dev/fd/3 --data-binary @-
+HEADER: Authorization: Bearer env-or
+ENV: 
+{"model":"typesafe/jev-1.13"}
