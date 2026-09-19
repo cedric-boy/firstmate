@@ -539,7 +539,7 @@ When the profile firstmate spawns differs from the resolved one, it records `res
 The phase ends by itself at 30 lines, and deleting the journal restarts it.
 
 Before changing a rule's `when`, `floor`, or `approval`, the pinned model, either fixed threshold, or what the resolver sends, run the labeled evaluation corpus and compare it with the run before the change.
-The corpus is private home data under `data/dispatch-eval/` and is never committed; [`verification/dispatch-resolve.md`](verification/dispatch-resolve.md) owns the command that runs it.
+The corpus is private home data under `data/dispatch-eval/` and is never committed; [`verification/dispatch-resolve.md`](verification/dispatch-resolve.md) owns the command that runs it, with a scratch state directory so corpus runs never write the home journal or advance the 30-dispatch shadow phase.
 The brief slice and the pinned model have not yet been measured against a live key, so run the corpus once before the first live dispatch, confirm that the API accepts the pinned ID, and run it again when the shadow phase ends.
 
 The resolver and bootstrap copy an environment-provided key into a non-exported private variable and unset `TYPESAFE_API_KEY` before launching child processes, so the secret is absent from child environments.

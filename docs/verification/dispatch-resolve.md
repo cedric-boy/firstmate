@@ -81,8 +81,9 @@ The labeled corpus is private home data under `data/dispatch-eval/` and is never
 From the firstmate home, with the key in the environment or `.env`:
 
 ```sh
+scratch=$(mktemp -d)
 while IFS=$'\t' read -r brief want_rule; do
-  bin/fm-dispatch-resolve.sh "data/dispatch-eval/$brief" --project eval 2>/dev/null |
+  FM_STATE_OVERRIDE="$scratch" bin/fm-dispatch-resolve.sh "data/dispatch-eval/$brief" --project eval 2>/dev/null |
     awk -v b="$brief" -v w="$want_rule" '
       /^  status:/  { st = $2 }
       /^  rule:/    { rule = $2; conf = $NF }
@@ -91,6 +92,7 @@ while IFS=$'\t' read -r brief want_rule; do
 done < data/dispatch-eval/labels.tsv | tee /dev/stderr | awk -F'\t' '
   { n++ } $2 == "want=" substr($3, 5) { hit++ } $5 == "status=clear" { clear++ }
   END { printf "briefs=%d rule_match=%d clear=%d\n", n, hit, clear }'
+rm -rf "$scratch"
 ```
 
 Each line shows the brief, the expected and matched rule, the confidence, the status, and the `profile:` line, and the last line counts briefs, rule matches, and clear results.
