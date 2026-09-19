@@ -234,9 +234,9 @@ assert_contains "$argv" '@/dev/fd/3' "the header is read from a file descriptor"
 assert_equals "Authorization: Bearer $KEY" "$(cat "$LOG/header")" "curl receives the bearer header on fd 3"
 assert_equals $'curl:clean\nquota-axi:clean' "$(cat "$LOG/child-env")" "the API key is absent from every child environment"
 body=$(cat "$LOG/body")
-assert_equals 'jev-latest' "$(jq -r .model <<<"$body")" "default model is jev-latest"
+assert_equals 'jev-1.13.0' "$(jq -r .model <<<"$body")" "the model is the pinned versioned ID, not the jev-latest alias"
 assert_equals 'pager' "$(jq -r .state.task.project <<<"$body")" "project rides in the state"
-assert_contains "$(jq -r .state.task.brief <<<"$body")" 'off-by-one in the pager' "the whole brief rides in the state"
+assert_contains "$(jq -r .state.task.brief <<<"$body")" 'off-by-one in the pager' "the brief's task text rides in the state"
 assert_equals '["rule"]' "$(jq -c '.questions | keys' <<<"$body")" "only the rule Choice is asked"
 assert_equals '["default","rule_1","rule_2","rule_3","rule_4"]' "$(jq -c '.questions.rule.criteria | keys' <<<"$body")" "one option per rule plus default"
 assert_equals 'No listed rule applies to this task.' "$(jq -r '.questions.rule.criteria.default' <<<"$body")" "the fixed generic none criterion is the default option"
@@ -352,6 +352,157 @@ assert_contains "$out" "  reason: rule requires the captain's explicit approval 
 assert_contains "$out" 'candidate: claude:fable  provider=claude  scope=model:fable  remaining=15%  spendPriority=-0.79  runway=projected_exhaustion  bounds=all_models:79%/projected_exhaustion,model:fable:15%/projected_exhaustion  -> eligible' "approval escalation preserves matched candidate evidence"
 assert_not_contains "$out" '  profile:' "escalate emits no profile line"
 pass "escalate: a rule declared approval: captain never yields a profile"
+
+# --- escalate: an approval gate does not hang on the top choice alone ---------------
+write_probabilities_response() {  # <path> <choice> <confidence> <rule_3 probability> <choice probability>
+  local other
+  other=$(jq -n --argjson gated "$4" --argjson chosen "$5" '(1 - $gated - $chosen) / 3')
+  jq -n --arg choice "$2" --argjson confidence "$3" --argjson gated "$4" --argjson chosen "$5" --argjson other "$other" '
+    { model: "jev-1.13.0",
+      answers: { rule: { type: "choice", choice: $choice, confidence: $confidence,
+        probabilities: ({rule_1: $other, rule_2: $other, rule_3: $other, rule_4: $other, default: $other}
+          | .rule_3 = $gated | .[$choice] = $chosen) } },
+      usage: { input_tokens: 812, output_tokens: 60 } }' > "$1"
+}
+reset_log
+write_probabilities_response "$RESPONSE" rule_4 0.8 0.3 0.68
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --project pager
+expect_code 0 "$code" "gate-by-probability escalation exits 0"
+assert_contains "$out" '  status: escalate' "an approval-gated rule carrying real probability escalates although another rule is the argmax"
+assert_contains "$out" 'reason: approval-gated rule rule_3 carries probability 0.3 (floor 0.2) without being the top choice' "the escalation names the gated rule and its probability"
+assert_not_contains "$out" '  profile:' "the probability escalation emits no profile line"
+write_probabilities_response "$RESPONSE" rule_4 0.8 0.2 0.76
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --project pager
+assert_contains "$out" '  status: escalate' "probability exactly at the floor escalates"
+write_probabilities_response "$RESPONSE" rule_4 0.8 0.15 0.81
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --project pager
+assert_contains "$out" '  status: clear' "probability below the floor does not escalate"
+write_probabilities_response "$RESPONSE" default 0.8 0.3 0.6
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --project pager
+assert_contains "$out" '  status: escalate' "the none option cannot hide an approval-gated rule carrying real probability"
+assert_contains "$out" 'approval-gated rule rule_3 carries probability 0.3' "the none-option escalation names the gated rule"
+jq 'del(.rules[2].approval)' "$BASE_RULES" > "$RULES"
+write_probabilities_response "$RESPONSE" rule_4 0.8 0.3 0.68
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --project pager
+assert_contains "$out" '  status: clear' "a rule without approval: captain never triggers the probability escalation"
+cp "$BASE_RULES" "$RULES"
+pass "approval: captain is a hard boundary that real probability alone escalates"
+
+# --- the request carries the task section, not the scaffold around it ---------------
+SCAFFOLD_BRIEF="$TMP_ROOT/scaffold-brief.md"
+cat > "$SCAFFOLD_BRIEF" <<'MD'
+You are a crewmate: an autonomous worker agent.
+
+# Task
+## Captain's intent
+Fix the off-by-one in the pager.
+
+## Firstmate spec
+Touch only pager.sh.
+
+# Setup
+SCAFFOLD-ONLY-TEXT about worktrees and status files.
+MD
+reset_log
+write_response "$RESPONSE" rule_4 0.9
+TYPESAFE_API_KEY=$KEY run code out err "$SCAFFOLD_BRIEF" --project pager
+sent=$(jq -r .state.task.brief "$LOG/body")
+assert_contains "$sent" 'off-by-one in the pager' "the captain's intent is sent"
+assert_contains "$sent" 'Touch only pager.sh.' "the firstmate spec is sent"
+assert_not_contains "$sent" 'SCAFFOLD-ONLY-TEXT' "the shared scaffold is not sent"
+assert_not_contains "$sent" 'crewmate' "text before the task section is not sent"
+PLAIN_BRIEF="$TMP_ROOT/plain-brief.md"
+printf '%s\n' 'A plain note with no task heading about the pager.' > "$PLAIN_BRIEF"
+reset_log
+TYPESAFE_API_KEY=$KEY run code out err "$PLAIN_BRIEF" --project pager
+assert_contains "$(jq -r .state.task.brief "$LOG/body")" 'A plain note with no task heading' "a brief without a Task heading is sent whole"
+
+# The slice must follow the scaffold fm-brief.sh really writes, or a heading rename would quietly resend the whole brief.
+GEN_HOME="$TMP_ROOT/brief-home"
+mkdir -p "$GEN_HOME/data"
+FM_HOME="$GEN_HOME" "$ROOT/bin/fm-brief.sh" slice-check some-proj --mode direct-PR >/dev/null 2>&1
+GEN_BRIEF="$GEN_HOME/data/slice-check/brief.md"
+assert_present "$GEN_BRIEF" "fm-brief.sh writes the brief the resolver reads"
+sed -e "s/{TASK}/Fix the off-by-one in the pager./" -e "s/{FIRSTMATE_SPEC}/Touch only pager.sh./" "$GEN_BRIEF" > "$GEN_BRIEF.filled"
+scaffold_heading=$(awk '/^# / && $0 != "# Task" { print; exit }' "$GEN_BRIEF.filled")
+[ -n "$scaffold_heading" ] || fail "the generated brief has a top-level section after # Task to slice away"
+assert_contains "$(cat "$GEN_BRIEF.filled")" "$scaffold_heading" "the generated brief carries that scaffold section"
+reset_log
+TYPESAFE_API_KEY=$KEY run code out err "$GEN_BRIEF.filled" --project pager
+sent=$(jq -r .state.task.brief "$LOG/body")
+assert_contains "$sent" 'Fix the off-by-one in the pager.' "a generated brief's captain intent is sent"
+assert_contains "$sent" 'Touch only pager.sh.' "a generated brief's firstmate spec is sent"
+assert_not_contains "$sent" "$scaffold_heading" "a generated brief's scaffold is not sent"
+pass "slice: only the task section rides in the state, and a headingless brief is sent whole"
+
+# --- journal: one private line per answered resolve, never brief text or the key ------
+file_mode() {
+  if [ "$(uname)" = Darwin ]; then
+    stat -f %Lp "$1"
+  else
+    stat -c %a "$1"
+  fi
+}
+JOURNAL="$HOME_DIR/state/dispatch-resolve.jsonl"
+JOURNAL_BRIEF="$TMP_ROOT/journal-brief.md"
+printf '# Task\nJOURNAL-BRIEF-SENTINEL fix the pager.\n' > "$JOURNAL_BRIEF"
+rm -rf "$HOME_DIR/state"
+reset_log
+write_response "$RESPONSE" rule_4 0.9
+TYPESAFE_API_KEY=$KEY run code out err "$JOURNAL_BRIEF" --project pager
+expect_code 0 "$code" "a journaled resolve exits 0"
+assert_contains "$out" '  status: clear' "journaling leaves the outcome unchanged"
+assert_equals '1' "$(wc -l < "$JOURNAL" | tr -d ' ')" "an answered resolve appends exactly one journal line"
+line=$(cat "$JOURNAL")
+assert_equals 'clear' "$(jq -r .status <<<"$line")" "the journal records the status"
+assert_equals 'rule_4' "$(jq -r .rule <<<"$line")" "the journal records the matched rule"
+assert_equals '0.9' "$(jq -r .confidence <<<"$line")" "the journal records the confidence"
+assert_equals '0.96' "$(jq -r .probabilities.rule_4 <<<"$line")" "the journal records the whole distribution"
+assert_equals 'jev-1.13.0' "$(jq -r .model <<<"$line")" "the journal records the model ID that answered"
+assert_equals 'pager' "$(jq -r .project <<<"$line")" "the journal records the project"
+assert_equals "$JOURNAL_BRIEF" "$(jq -r .brief <<<"$line")" "the journal keys on the brief path"
+assert_equals 'cursor' "$(jq -r .profile.harness <<<"$line")" "the journal records the chosen profile"
+assert_equals '812' "$(jq -r .tokens.input_tokens <<<"$line")" "the journal records the input tokens"
+assert_not_contains "$line" 'JOURNAL-BRIEF-SENTINEL' "the journal never holds brief text"
+assert_not_contains "$line" "$KEY" "the journal never holds the key"
+assert_equals '600' "$(file_mode "$JOURNAL")" "the journal is private to its owner"
+write_response "$RESPONSE" rule_4 0.41
+TYPESAFE_API_KEY=$KEY run code out err "$JOURNAL_BRIEF" --project pager
+assert_equals '2' "$(wc -l < "$JOURNAL" | tr -d ' ')" "a second answered resolve appends a second line"
+assert_equals 'ambiguous' "$(jq -r .status <<<"$(tail -n 1 "$JOURNAL")")" "an ambiguous answer is journaled too"
+assert_contains "$(jq -r .reason <<<"$(tail -n 1 "$JOURNAL")")" 'below floor 0.6' "the journal records why the answer was not clear"
+write_response "$RESPONSE" rule_3 0.95
+TYPESAFE_API_KEY=$KEY run code out err "$JOURNAL_BRIEF" --project pager
+assert_equals '3' "$(wc -l < "$JOURNAL" | tr -d ' ')" "an escalated answer is journaled too"
+assert_equals 'null' "$(jq -r .profile <<<"$(tail -n 1 "$JOURNAL")")" "a non-clear answer journals no profile"
+# Outcomes that carry no answer append nothing.
+write_response "$RESPONSE" rule_9 0.9
+TYPESAFE_API_KEY=$KEY run code out err "$JOURNAL_BRIEF" --project pager
+assert_contains "$out" '  status: error' "an unknown rule id is still an error outcome"
+TYPESAFE_API_KEY=$KEY FAKE_CURL_HTTP=500 run code out err "$JOURNAL_BRIEF" --project pager
+assert_contains "$out" '  status: error' "an API failure is still an error outcome"
+run code out err "$JOURNAL_BRIEF" --project pager
+expect_code 0 "$code" "a resolve with the tool off still exits 0"
+rm -f "$RULES"
+write_response "$RESPONSE" rule_4 0.9
+TYPESAFE_API_KEY=$KEY run code out err "$JOURNAL_BRIEF" --project pager
+assert_contains "$out" '  reason: no rules to match' "a missing rules file still returns control to firstmate"
+cp "$BASE_RULES" "$RULES"
+assert_equals '3' "$(wc -l < "$JOURNAL" | tr -d ' ')" "error, off, and no-rule outcomes append nothing"
+# FM_STATE_OVERRIDE selects the directory, like the other state writers.
+write_response "$RESPONSE" rule_4 0.9
+TYPESAFE_API_KEY=$KEY FM_STATE_OVERRIDE="$TMP_ROOT/alt-state" run code out err "$JOURNAL_BRIEF" --project pager
+assert_equals '1' "$(wc -l < "$TMP_ROOT/alt-state/dispatch-resolve.jsonl" | tr -d ' ')" "FM_STATE_OVERRIDE selects the journal directory"
+assert_equals '3' "$(wc -l < "$JOURNAL" | tr -d ' ')" "the default journal is untouched when the directory is overridden"
+# A journal that cannot be written costs one stderr line and never the outcome.
+rm -rf "$HOME_DIR/state"
+: > "$HOME_DIR/state"
+TYPESAFE_API_KEY=$KEY run code out err "$JOURNAL_BRIEF" --project pager
+expect_code 0 "$code" "an unwritable journal still exits 0"
+assert_contains "$out" '  status: clear' "an unwritable journal leaves the outcome unchanged"
+assert_contains "$err" 'dispatch-resolve: journal not written' "an unwritable journal is reported on stderr"
+rm -f "$HOME_DIR/state"
+pass "journal: one private line per answered resolve, without brief text or the key, and never at the outcome's expense"
 
 # --- rule floor fails: fall through to default -------------------------------
 reset_log

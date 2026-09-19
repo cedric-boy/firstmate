@@ -14,7 +14,8 @@
 #   a file descriptor, never on argv; nothing logs or writes it.
 #
 # What it does when on with at least one rule: one POST to
-#   https://api.typesafe.ai/v1/systemone with the project name and the whole brief as
+#   https://api.typesafe.ai/v1/systemone with the project name and the brief's
+#   `# Task` section (the whole brief when it has none) as
 #   state and ONE Choice question whose
 #   options are every rule's `when` from config/crew-dispatch.json plus one
 #   fixed generic none option. Jev returns the matched rule, a probability per
@@ -27,6 +28,14 @@
 #   docs/configuration.md "Crew dispatch profiles" owns the declared fields and
 #   "Typed dispatch resolution" owns this tool's operator contract.
 #
+# Journal: every answered resolve (status clear, ambiguous, or escalate) appends
+#   one JSON line to $FM_HOME/state/dispatch-resolve.jsonl (FM_STATE_OVERRIDE
+#   selects the directory): timestamp, brief path, project, the answering model
+#   ID, latency, tokens, rule, confidence, probabilities, status, reason, and
+#   the chosen profile. It never holds brief text or the key, and a write
+#   failure is one stderr line that never changes the outcome. Off, error, and
+#   no-rule outcomes append nothing.
+#
 # Output (stdout, TOON-style block):
 #   dispatch-resolve:
 #     status: clear | ambiguous | escalate | error
@@ -36,7 +45,9 @@
 #     profile: --harness <h> [--model <m>] [--effort <e>]     (status clear only)
 #   clear     -> pass the profile line to fm-spawn.sh unless you state a reason to override
 #   ambiguous -> confidence below the floor; decide as today from the probabilities
-#   escalate  -> the rule requires captain approval, no candidate is rankable, or a genuine tie
+#   escalate  -> a rule requires captain approval (it was chosen, or carries real
+#                probability without being the top choice), no candidate is
+#                rankable, or a genuine tie
 #   error     -> API, network, response, or quota-axi failure; decide as today
 #   Every outcome exits 0 so an intake is never blocked by this tool.
 #   Exit 2 only for a usage or configuration error (unreadable brief, an
@@ -59,6 +70,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-$FM_ROOT}"
 CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
+STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 
 # shellcheck source=bin/fm-quota-axi-lib.sh
 . "$SCRIPT_DIR/fm-quota-axi-lib.sh"
@@ -70,7 +82,13 @@ CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 . "$SCRIPT_DIR/fm-timing-lib.sh"
 
 CONFIDENCE_FLOOR=0.6
-TS_MODEL=jev-latest
+# Probability an approval: captain rule may carry without being the top choice
+# before the answer escalates: the gate must not hang on the argmax alone.
+APPROVAL_MASS_FLOOR=0.2
+# A versioned ID, not the jev-latest alias: the floors are tuned against one
+# release and an alias moves when a new one ships. Upgrade it deliberately after
+# the evaluation corpus passes (docs/configuration.md "Typed dispatch resolution").
+TS_MODEL=jev-1.13.0
 TS_BASE=https://api.typesafe.ai
 TS_TIMEOUT=5
 DEFAULT_WHEN="No listed rule applies to this task."
@@ -218,10 +236,16 @@ fi
 
 RESP_FILE=$(mktemp) || die "mktemp failed"
 QUOTA=$(mktemp) || { rm -f "$RESP_FILE"; die "mktemp failed"; }
-trap 'rm -f "$RULES" "$RESP_FILE" "$QUOTA"' EXIT
+SLICE=$(mktemp) || { rm -f "$RESP_FILE" "$QUOTA"; die "mktemp failed"; }
+trap 'rm -f "$RULES" "$RESP_FILE" "$QUOTA" "$SLICE"' EXIT
 LAT_MS=null
 command -v curl >/dev/null 2>&1 || emit_error "curl not installed"
-  REQUEST=$(jq -n --rawfile brief "$BRIEF" --arg project "$PROJECT" --arg model "$TS_MODEL" \
+# Jev reads only the task's own section: the scaffold around it is identical for
+# every brief, unrelated state costs Jev accuracy, and the text goes to a third
+# party. A brief without a `# Task` heading is sent whole.
+awk '/^# / { keep = ($0 == "# Task") } keep' "$BRIEF" > "$SLICE"
+[ -s "$SLICE" ] || cp "$BRIEF" "$SLICE"
+  REQUEST=$(jq -n --rawfile brief "$SLICE" --arg project "$PROJECT" --arg model "$TS_MODEL" \
     --arg none_criterion "$DEFAULT_WHEN" --slurpfile rules "$RULES" '
     ($rules[0]) as $cfg |
     ($cfg.rules | to_entries | map({key: ("rule_" + ((.key + 1) | tostring)), value: .value.when}) | from_entries) as $criteria |
@@ -265,7 +289,7 @@ quota-axi --json > "$QUOTA" 2>/dev/null || emit_error "quota-axi --json failed"
 fm_quota_json_valid < "$QUOTA" || emit_error "quota-axi --json returned an invalid snapshot"
 
 # ---- resolution: declared gates + quota evidence + argmax, all in jq ------------
-RESULT=$(jq -n --arg floor "$CONFIDENCE_FLOOR" --argjson lat "$LAT_MS" --arg none_criterion "$DEFAULT_WHEN" --argjson pmap "$PMAP" \
+RESULT=$(jq -n --arg floor "$CONFIDENCE_FLOOR" --arg mass_floor "$APPROVAL_MASS_FLOOR" --argjson lat "$LAT_MS" --arg none_criterion "$DEFAULT_WHEN" --argjson pmap "$PMAP" \
   --slurpfile resp "$RESP_FILE" --slurpfile rules "$RULES" --slurpfile quota "$QUOTA" '
   ($resp[0]) as $r | ($rules[0]) as $cfg | ($quota[0]) as $q | ($r.answers.rule) as $a |
   def profiles($v): if ($v | type) == "array" then $v elif ($v | type) == "object" then [$v] else [] end;
@@ -340,11 +364,16 @@ RESULT=$(jq -n --arg floor "$CONFIDENCE_FLOOR" --argjson lat "$LAT_MS" --arg non
    elif $rule_number != null and $rule_number <= (($cfg.rules // []) | length) then $cfg.rules[$rule_number - 1]
    else null end) as $rule |
   (if $rule == null then "none" else floor_state($rule.floor; $rule.floor.provider) end) as $rule_floor_state |
+  ([($cfg.rules // []) | to_entries[] | select(.value.approval == "captain")
+    | {key: "rule_\(.key + 1)", p: ($a.probabilities["rule_\(.key + 1)"] // 0)}
+    | select(.p >= ($mass_floor | tonumber))] | max_by(.p)) as $gated_hit |
   (if $choice != "default" and $rule == null then []
    elif $rule == null then profiles($cfg.default // null)
    else profiles($rule.use)
    end) as $answer_use |
   (if $choice != "default" and $rule == null then {invalid: "rule \($choice) is not in the rules file"}
+   elif $gated_hit != null and ($rule == null or ($rule.approval // "") != "captain")
+     then {source: $choice, escalate: "approval-gated rule \($gated_hit.key) carries probability \($gated_hit.p) (floor \($mass_floor)) without being the top choice"}
    elif $rule == null then {source: "default", use: profiles($cfg.default // null), note: "no rule matched"}
    elif ($rule.approval // "") == "captain" then {source: $choice, escalate: "rule requires the captain'"'"'s explicit approval before dispatch"}
    elif $rule_floor_state == "unknown" then {source: $choice, escalate: "rule \($choice) floor \($rule.floor.provider)/\($rule.floor.scope) is unverifiable"}
@@ -400,5 +429,19 @@ TEXT=$(jq -r '
   (if .chosen then "  profile: --harness \(.chosen.profile.harness | shell_arg)"
       + (if .chosen.profile.model then " --model \(.chosen.profile.model | shell_arg)" else "" end)
       + (if .chosen.profile.effort then " --effort \(.chosen.profile.effort | shell_arg)" else "" end) else empty end)' <<<"$RESULT") || emit_error "output rendering failed"
+
+# ---- journal: one line per answered resolve, never brief text or the key -------
+journal_append() {
+  mkdir -p "$STATE" && (
+    umask 077
+    jq -c --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg brief "$BRIEF" --arg project "$PROJECT" '
+      select(.status != "error")
+      | {ts: $ts, brief: $brief, project: $project, model, latency_ms, tokens, rule, confidence,
+         probabilities, status, reason: (.reason // null), profile: (.chosen.profile // null)}' \
+      <<<"$RESULT" >> "$STATE/dispatch-resolve.jsonl"
+  )
+}
+journal_append 2>/dev/null || echo "dispatch-resolve: journal not written ($STATE/dispatch-resolve.jsonl)" >&2
+
 printf '%s\n' "$TEXT"
 exit 0

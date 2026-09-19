@@ -11,7 +11,7 @@ The shared orchestrator behavior lives in [`AGENTS.md`](../AGENTS.md) - edit it 
 This section is the single owner of the top-level operational-home layout; producer script headers and their help own exact child-file fields and mutation contracts.
 The tracked code root contains the shared instruction, skill, documentation, workflow, and `bin/` surfaces, while each effective `FM_HOME` contains private operational directories.
 `data/` holds durable private fleet records such as the project and secondmate registries, captain preferences, optional shared captain preferences, learnings, backlog, briefs, scout reports, and explicitly installed content-addressed extension packages under `data/extensions/packages/`.
-`state/` holds runtime records such as task metadata, append-only status events, endpoint signals, watcher and wake-queue coordination, inactive terminal-outcome receipts under `state/terminal-outcomes/`, enabled extension working namespaces under `state/extensions/`, away-mode state, generated Relay artifacts, parent-side remote ledger copies under `state/secondmate-summary-cache/`, one-shot Bearings reconcile requests under `state/reconcile-notify/`, private secondmate config-reread generations with their retry and quarantine state, per-task steering-inbox records under `state/<id>.inbox/` (`bin/fm-task-inbox-lib.sh`), and parent-owned secondmate pending-reply records under `state/pending-replies/` (`bin/fm-pending-reply-lib.sh`).
+`state/` holds runtime records such as task metadata, append-only status events, endpoint signals, watcher and wake-queue coordination, inactive terminal-outcome receipts under `state/terminal-outcomes/`, enabled extension working namespaces under `state/extensions/`, away-mode state, generated Relay artifacts, parent-side remote ledger copies under `state/secondmate-summary-cache/`, one-shot Bearings reconcile requests under `state/reconcile-notify/`, private secondmate config-reread generations with their retry and quarantine state, per-task steering-inbox records under `state/<id>.inbox/` (`bin/fm-task-inbox-lib.sh`), parent-owned secondmate pending-reply records under `state/pending-replies/` (`bin/fm-pending-reply-lib.sh`), and the private typed-dispatch decision journal `state/dispatch-resolve.jsonl` (`bin/fm-dispatch-resolve.sh`).
 `config/` holds local gitignored operating choices, including explicit extension bindings under `config/extensions.d/`, and `projects/` holds the local project clones that Firstmate reads but changes only through the narrow guarded and concrete captain-approved exceptions in `AGENTS.md`.
 Untracked files and directories whose names begin with `scratchpad` are also gitignored, so temporary scratch does not make porcelain-based secondmate sync guards treat a home as dirty.
 
@@ -467,7 +467,13 @@ The single-object form stays fully backward-compatible, and every profile needs 
 Profile `model` and `effort` fields and rule `why` are optional.
 Rule `approval` and `floor`, and profile `provider` and `floor` are optional declarations that only [typed dispatch resolution](#typed-dispatch-resolution-env-typesafe_api_key) applies in code; without that opt-in they are inert, and firstmate's own intake reads them as ordinary hints.
 The resolver supplies the fixed neutral Choice option `No listed rule applies to this task.` for work that matches no listed rule.
+Write each `when` as one positive, literal, self-contained condition that names the task shape and the words a brief for it would contain, because Jev answers the words written and reads negations, scoping words, and indirection less reliably.
+Avoid negations, `except when` clauses, and references to another rule, and state a boundary as what the rule does own, such as `a one-line tweak with a stated root cause is a bug fix`, rather than what it excludes.
+Keep conditions mutually exclusive and give each distinct outcome exactly one rule, because two rules with the same `use` only split Jev's probability and lower its confidence without changing the profile.
+Any `when` edit needs the evaluation corpus run described under typed dispatch resolution.
 `approval` accepts only `"captain"` and means a task the rule matches is never dispatched from the tool's answer alone.
+It is a hard boundary by default: besides matching when the rule is Jev's top choice, the tool escalates when the rule carries at least 0.2 of Jev's probability, so the gate does not hang on the argmax alone.
+A rule meant only as a convenience should not use `approval`.
 A rule `floor` names the quota-axi `provider` and `scope` whose `effectivePercentRemaining` must be at least `min_percent` for the rule's profiles to apply.
 A known percentage below it makes the tool resolve among `default` instead; an absent or unknown row or unmeasured provider makes the floor unverifiable and escalates without authorizing default routing.
 A profile `provider` optionally names the quota-axi provider family whose rows apply to that profile; when present, profile and rule-floor provider IDs must match the strict whole-string pattern `^[a-z0-9]+(-[a-z0-9]+)*\z`.
@@ -507,7 +513,10 @@ bin/fm-dispatch-resolve.sh data/<id>/brief.md --project <name>        # TOON blo
 ```
 
 Firstmate invokes the resolve path directly after writing the brief, without a preflight; the absent-key off line is handled exactly like every other non-clear outcome.
-When on and at least one rule exists, the tool sends the project name and the whole brief as state and asks one Choice question whose options are every rule's `when` plus the fixed neutral option for no matching rule; the model never sees quota, catalogs, `why`, `use`, or approvals.
+When on and at least one rule exists, the tool sends the project name and the brief's `# Task` section as state and asks one Choice question whose options are every rule's `when` plus the fixed neutral option for no matching rule; the model never sees quota, catalogs, `why`, `use`, or approvals.
+A brief with no `# Task` heading is sent whole.
+The scaffold around that section is identical for every brief, so leaving it out keeps unrelated text from costing Jev accuracy, and the text that is sent goes to typesafe.ai unredacted.
+Jev is most accurate on English, so `AGENTS.md` section 11 keeps an English rendering beside a non-English ask in the brief.
 An absent rules file, a default-only file, or `rules: []` returns the non-clear reason `no rules to match` without a model or quota request, leaving firstmate's existing routing in control; an existing but unreadable or malformed rules file, including a broken symlink, remains an actionable exit 2 configuration error.
 Everything after the answer runs in code: the confidence floor, the matched rule's `approval` and `floor`, each candidate's `provider` and `floor`, every applicable account-wide and model/product row from one `quota-axi --json` snapshot, and the numeric `spendPriority` argmax over candidates using each candidate's limiting row.
 Known applicable rows from a provider with partial quota semantics remain rankable; rows whose own status is not known remain unrankable.
@@ -522,9 +531,21 @@ The tool never replaces firstmate's judgment, `quota-array-dispatch`, the captai
 By accepted design, a `clear` result does not enforce catalog/authentication, reasoning-class, or completion-runway gates.
 Firstmate passes its profile line unless it states a reason to override, such as the brief's reasoning class or an eligible-unranked-candidate note; every non-clear result returns to the full existing intake.
 
+Every answered resolve appends one line to the private journal `state/dispatch-resolve.jsonl`: the brief path, project, answering model ID, latency, tokens, matched rule, confidence, probabilities, status, reason, and chosen profile, and never brief text or the key.
+Off, error, and no-rule outcomes append nothing, a write failure is one stderr line that never changes the outcome, and the script header owns the exact fields.
+The journal is what a later floor or threshold change is tuned against.
+It also drives the shadow phase: until it holds 30 lines, firstmate still reasons out its own intake and treats a `clear` profile as a comparison rather than a default, which is the standing reason to override it.
+When the profile firstmate spawns differs from the resolved one, it records `resolver-override: <resolved> -> <chosen>: <reason>` in the task's backlog note, so the journal and the notes together show the override rate.
+The phase ends by itself at 30 lines, and deleting the journal restarts it.
+
+Before changing a rule's `when`, `floor`, or `approval`, the pinned model, either fixed threshold, or what the resolver sends, run the labeled evaluation corpus and compare it with the run before the change.
+The corpus is private home data under `data/dispatch-eval/` and is never committed; [`verification/dispatch-resolve.md`](verification/dispatch-resolve.md) owns the command that runs it.
+The brief slice and the pinned model have not yet been measured against a live key, so run the corpus once before the first live dispatch, confirm that the API accepts the pinned ID, and run it again when the shadow phase ends.
+
 The resolver and bootstrap copy an environment-provided key into a non-exported private variable and unset `TYPESAFE_API_KEY` before launching child processes, so the secret is absent from child environments.
 The resolver sends the key to `curl` only as a header read from a file descriptor, never on argv, and nothing prints, logs, or writes it.
-The resolver fixes the endpoint at `https://api.typesafe.ai`, model at `jev-latest`, confidence floor at 0.6, and request timeout at 5 seconds; `TYPESAFE_API_KEY` is its only resolver-specific environment setting.
+The resolver fixes the endpoint at `https://api.typesafe.ai`, model at the versioned ID `jev-1.13.0`, confidence floor at 0.6, approval probability floor at 0.2, and request timeout at 5 seconds; `TYPESAFE_API_KEY` is its only resolver-specific environment setting.
+The model is a versioned ID rather than the `jev-latest` alias because an alias moves when a release ships and the floors are tuned against one release; upgrade the pin deliberately, after the evaluation corpus passes on the new version.
 The live rule-match evidence is recorded in [`verification/dispatch-resolve.md`](verification/dispatch-resolve.md).
 
 ## Toolchain
