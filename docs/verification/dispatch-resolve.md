@@ -62,9 +62,9 @@ It proves absent, default-only, and empty-rules files return `no rules to match`
 It proves the documented starter configuration resolves its Pi default through the declared Claude provider, a `.env` key turns the tool on, and the environment wins over it.
 It proves the key is absent from child environments, never appears on `curl` argv, and arrives only as the bearer header on the descriptor.
 It proves the request uses the fixed endpoint and the pinned versioned model ID, carries only the project, the brief's `# Task` section, and the rule Choice with one option per rule plus the fixed neutral none option, and never carries `why`, `use`, or quota.
-It proves a brief with no `# Task` heading is sent whole and that a brief written by `bin/fm-brief.sh` is sent without the scaffold around its task section.
+It proves a brief with no `# Task` heading is sent whole, that a brief written by `bin/fm-brief.sh` is sent without the scaffold around its task section, and that a heading pasted into the captain's intent or a `# comment` line inside a code fence does not cut the task text.
 It proves the clear, fixed-floor ambiguous with candidate evidence, escalate (approval with candidate evidence, unverifiable rule floor, tie, nothing rankable), known rule-floor fall-through, known and unverifiable profile-floor evidence, explicit-provider and provider-ID enforcement, authoritative Agy and explicit-provider Gemini routing, partial providers, eligible unranked candidates and their clear-result note, concrete quota vetoes and profile-floor shortfalls taking precedence over uncertainty, account-wide quota veto, limiting-bound ranking, missing-curl and quota-axi failures, HTTP 429 and 500, transport failure, malformed usage, zero-mass or malformed probabilities or confidence, malformed or duplicate profile, invalid selector, removed-option rejection, and out-of-range rule ID paths behave as the contract states, with configuration errors exiting 2 before any network call.
-It proves an `approval: captain` rule carrying at least 0.2 of the probability escalates without being the top choice, including behind the none option, while a rule below that floor or without `approval` does not.
+It proves an `approval: captain` rule carrying at least 0.2 of the probability escalates whether or not it is the top choice, including behind the none option and below the confidence floor, while a rule below that floor or without `approval` does not.
 It proves each answered resolve appends one private journal line holding the status, rule, confidence, probabilities, answering model ID, project, brief path, tokens, and chosen profile but never brief text or the key, that off, error, and no-rule outcomes append nothing, that `FM_STATE_OVERRIDE` selects the directory, and that an unwritable journal costs one stderr line and changes no outcome.
 `tests/fm-bootstrap.test.sh` proves bootstrap ignores resolver-only fields without the typed key, validates each malformed shape when the environment or home `.env` activates typed resolution, and prevents an environment-provided key from reaching child processes.
 
@@ -76,7 +76,7 @@ $ bash tests/fm-dispatch-resolve.test.sh | tail -1
 ## Re-running the evidence
 
 A live run needs a key and is not part of the suite.
-[`../configuration.md`](../configuration.md) ("Typed dispatch resolution") owns when to run it: before and after any rule, threshold, pinned-model, or request change, once before the first live dispatch, and again when the shadow phase ends.
+[`../configuration.md`](../configuration.md) ("Typed dispatch resolution") owns when to run it.
 The labeled corpus is private home data under `data/dispatch-eval/` and is never committed: the `# Task` section of past briefs with secrets removed, and a tab-separated `labels.tsv` of `<brief file><TAB><expected rule, such as rule_4 or default>`.
 From the firstmate home, with the key in the environment or `.env`:
 
