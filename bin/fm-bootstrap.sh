@@ -1520,12 +1520,28 @@ detect_local_config() {
     echo "MISSING_MANUAL: cursor-agent (instructions: $(manual_install_url cursor-agent))"
   fi
   crew_dispatch_validate
+  typed_dispatch_status
   if [ "${FM_BOOTSTRAP_VERBOSE_FACTS:-0}" = 1 ] \
     && ! fm_backlog_backend_manual "$CONFIG" && fm_tasks_axi_compatible; then
     echo "BOOTSTRAP_INFO: tasks-axi available"
   fi
   detect_code_root_backlog_fork
   detect_home_summary_publication
+}
+
+# Typed dispatch is optional, but a session start must make its state explicit
+# so a home without Jev does not look configured when the resolver is quietly
+# following its ordinary off path.
+typed_dispatch_status() {
+  local typed_key=$TYPESAFE_API_KEY_PRIVATE
+  [ -n "$typed_key" ] || typed_key=$(fmx_env_get TYPESAFE_API_KEY "$FM_HOME/.env")
+  if [ -n "$typed_key" ]; then
+    if [ "${FM_BOOTSTRAP_SESSION_START:-0}" = 1 ] || [ "${FM_BOOTSTRAP_VERBOSE_FACTS:-0}" = 1 ]; then
+      echo "BOOTSTRAP_INFO: typed dispatch resolution active (Jev decision layer via TypeSafe)"
+    fi
+  elif [ "${FM_BOOTSTRAP_SESSION_START:-0}" = 1 ]; then
+    echo "TYPED_DISPATCH: inactive - TYPESAFE_API_KEY is absent from the environment and $FM_HOME/.env; add it to enable Jev decision resolution"
+  fi
 }
 
 # Shadow-backlog check. When this home's data directory is not the code root's,

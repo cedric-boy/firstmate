@@ -360,6 +360,11 @@ IFS= read -r -d '' TASK_SECTION <<'EOF' || true
 
 ## Firstmate spec
 {FIRSTMATE_SPEC}
+
+## Jev decision layer
+For every real choice in this task - selection, ranking, triage, classification, or evaluation - prepare the options and evidence yourself, then let Jev choose through the TypeSafe recipe in `bin/fm-dispatch-resolve.sh` (`https://api.typesafe.ai/v1/systemone`, model `jev-latest`).
+Record the choice, probabilities, confidence, and token usage; report low confidence as an open question instead of smoothing it away.
+Use TypeSafe only; never OpenRouter. If this home's `TYPESAFE_API_KEY` is absent, report Jev as inactive instead of silently replacing the decision layer.
 EOF
 TASK_SECTION=${TASK_SECTION%$'\n'}
 

@@ -213,6 +213,8 @@ A silent bootstrap section needs no action; for any printed actionable diagnosti
 
 ## 4. Harness and runtime dispatch
 
+Jev is the fleet's standing decision layer: it resolves crew dispatch and makes in-work choices with enumerable option sets across projects and workflows, while code retains control flow, thresholds, and safety gates.
+Without a `TYPESAFE_API_KEY` in a home, typed dispatch resolution is off and the fleet falls back to ordinary intake; bootstrap surfaces that state, and [docs/configuration.md](docs/configuration.md) owns the key setup and call details.
 Load `harness-adapters` before every spawn or recovery and before trust handling, skill invocation, interrupt, exit, resume, or adapter verification.
 The verified harnesses are `claude`, `codex`, `opencode`, `pi`, `pi-signed`, `grok`, `kimi`, `cursor`, and `omp`, plus `muse`, `gemini`, `rovo`, and `agy` for crewmates and scouts only; never dispatch on an unverified adapter.
 If static `config/crew-harness` or `config/secondmate-harness` names an unverified adapter, report it and fall back only to a verified adapter rather than launching it.

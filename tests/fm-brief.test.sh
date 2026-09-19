@@ -213,12 +213,30 @@ test_ship_modes_generate_clean_briefs() {
     assert_grep "{FIRSTMATE_SPEC}" "$brief" "$id: brief missing the {FIRSTMATE_SPEC} placeholder"
     assert_grep "## Captain's intent" "$brief" "$id: brief missing Captain's intent subsection"
     assert_grep "## Firstmate spec" "$brief" "$id: brief missing Firstmate spec subsection"
+    assert_grep "## Jev decision layer" "$brief" "$id: brief missing Jev decision-layer section"
+    assert_grep "https://api.typesafe.ai/v1/systemone" "$brief" "$id: brief lost the TypeSafe endpoint"
+    assert_grep "model \`jev-latest\`" "$brief" "$id: brief lost the TypeSafe Jev model"
+    assert_grep "Record the choice, probabilities, confidence, and token usage" "$brief" "$id: brief lost Jev decision evidence requirements"
+    assert_grep "never OpenRouter" "$brief" "$id: brief did not forbid OpenRouter"
     assert_grep 'never a bare number such as "PR 108"' "$brief" "$id: brief missing the full-PR-URL rule"
     assert_grep "mid-task \`working:\` line (including setup complete) is nonterminal" "$brief" \
       "$id: brief missing nonterminal working:/setup-complete gate protection"
     assert_no_grep "EOF" "$brief" "$id: brief leaked a heredoc EOF marker (unterminated heredoc)"
   done
   pass "fm-brief.sh: no-mistakes/direct-PR/local-only briefs generate cleanly"
+}
+
+test_scout_brief_carries_jev_decision_layer() {
+  local home brief
+  home="$TMP_ROOT/jev-scout-home"
+  mkdir -p "$home/data"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" jev-scout sample --scout >/dev/null 2>&1 \
+    || fail "scout brief failed to scaffold"
+  brief="$home/data/jev-scout/brief.md"
+  assert_grep "## Jev decision layer" "$brief" "scout brief missing Jev decision-layer section"
+  assert_grep "If this home's \`TYPESAFE_API_KEY\` is absent, report Jev as inactive" "$brief" \
+    "scout brief did not surface the per-home inactive state"
+  pass "fm-brief.sh: ship and scout briefs carry the compact Jev decision-layer rule"
 }
 
 # A ship task's delivery mode is firstmate's per-task decision, so a missing or
@@ -978,6 +996,7 @@ test_script_parses
 test_no_heredoc_in_command_substitution
 test_help_includes_entire_header
 test_ship_modes_generate_clean_briefs
+test_scout_brief_carries_jev_decision_layer
 test_ship_mode_is_required_and_closed_set
 test_ship_mode_is_explicit_not_registry
 test_delivery_flags_are_refused_where_they_do_not_apply

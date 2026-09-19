@@ -1104,6 +1104,28 @@ test_crew_dispatch_active_rules_are_verbose_bootstrap_info() {
   pass "bootstrap surfaces active crew-dispatch rules only as verbose BOOTSTRAP_INFO"
 }
 
+test_typed_dispatch_state_is_visible_at_session_start() {
+  local case_dir fakebin out
+  case_dir="$TMP_ROOT/typed-dispatch-state"
+  mkdir -p "$case_dir/home/config"
+  printf '%s\n' manual > "$case_dir/home/config/backlog-backend"
+  fakebin=$(make_fake_toolchain "$case_dir")
+
+  out=$(PATH="$fakebin:$BASE_PATH" FM_HOME="$case_dir/home" FM_ROOT_OVERRIDE="$case_dir/home" \
+    FM_BOOTSTRAP_SESSION_START=1 FM_FAKE_TREEHOUSE_LEASE_HELP=1 "$ROOT/bin/fm-bootstrap.sh")
+  assert_contains "$out" "TYPED_DISPATCH: inactive - TYPESAFE_API_KEY is absent from the environment and $case_dir/home/.env; add it to enable Jev decision resolution" \
+    "session-start bootstrap did not report missing typed-dispatch activation"
+
+  printf '%s\n' 'TYPESAFE_API_KEY=test-key' > "$case_dir/home/.env"
+  out=$(PATH="$fakebin:$BASE_PATH" FM_HOME="$case_dir/home" FM_ROOT_OVERRIDE="$case_dir/home" \
+    FM_BOOTSTRAP_SESSION_START=1 FM_FAKE_TREEHOUSE_LEASE_HELP=1 "$ROOT/bin/fm-bootstrap.sh")
+  assert_contains "$out" "BOOTSTRAP_INFO: typed dispatch resolution active (Jev decision layer via TypeSafe)" \
+    "session-start bootstrap did not report active typed-dispatch resolution"
+  assert_not_contains "$out" "TYPED_DISPATCH: inactive" \
+    "active typed-dispatch resolution was also reported inactive"
+  pass "bootstrap: typed-dispatch activation is visible at session start"
+}
+
 test_crew_dispatch_validation() {
   local label body expect mode case_dir fakebin out child_env n
   n=0
@@ -1260,4 +1282,5 @@ test_network_sweeps_recheck_lock_ownership
 test_network_phases_record_per_step_elapsed_times
 test_tasks_axi_verdict_handoff_is_consumed_once
 test_crew_dispatch_active_rules_are_verbose_bootstrap_info
+test_typed_dispatch_state_is_visible_at_session_start
 test_crew_dispatch_validation
