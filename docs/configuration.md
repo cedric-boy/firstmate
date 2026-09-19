@@ -472,7 +472,7 @@ Avoid negations, `except when` clauses, and references to another rule, and stat
 Keep conditions mutually exclusive and give each distinct outcome exactly one rule, because two rules with the same `use` only split Jev's probability and lower its confidence without changing the profile.
 Any `when` edit needs the evaluation corpus run described under typed dispatch resolution.
 `approval` accepts only `"captain"` and means a task the rule matches is never dispatched from the tool's answer alone.
-It is a hard boundary by default: besides matching when the rule is Jev's top choice, the tool escalates when the rule carries at least 0.2 of Jev's probability, so the gate does not hang on the argmax alone.
+It is a hard boundary by default: besides matching when the rule is Jev's top choice, the tool escalates when the rule carries at least 0.2 of Jev's probability, whatever the confidence, so the gate hangs on neither the argmax nor the confidence floor.
 A rule meant only as a convenience should not use `approval`.
 A rule `floor` names the quota-axi `provider` and `scope` whose `effectivePercentRemaining` must be at least `min_percent` for the rule's profiles to apply.
 A known percentage below it makes the tool resolve among `default` instead; an absent or unknown row or unmeasured provider makes the floor unverifiable and escalates without authorizing default routing.
@@ -523,7 +523,7 @@ Known applicable rows from a provider with partial quota semantics remain rankab
 Any applicable `exhausted_now` row or known zero bound makes that candidate ineligible, and a known profile-floor shortfall does the same before unrelated quota uncertainty is considered.
 Missing or nonnumeric `spendPriority` evidence is never ranked, and every candidate is printed beside its evidence or the reason it was not rankable, including on ambiguous and approval-gated outcomes that emit no profile.
 On the opted-in path, duplicate concrete profiles with the same harness, model, and effort inside one rule or the default array are configuration errors rather than ties.
-The result is one of `clear` (a `profile:` line ready for `fm-spawn.sh`), `ambiguous` (confidence below the floor), `escalate` (an approval-gated rule, unverifiable rule floor, nothing rankable, or a genuine tie), or `error` (API, network, malformed response metadata, rendering, or quota-axi failure), and every one of them exits 0.
+The result is one of `clear` (a `profile:` line ready for `fm-spawn.sh`), `ambiguous` (confidence below the floor, with no approval-gated rule carrying 0.2 of the probability), `escalate` (an approval-gated rule, unverifiable rule floor, nothing rankable, or a genuine tie), or `error` (API, network, malformed response metadata, rendering, or quota-axi failure), and every one of them exits 0.
 Response probabilities must contain exactly every offered choice, use numeric values from 0 through 1, and sum to approximately 1 within 0.01.
 Only a usage or configuration error exits 2: an unreadable brief, an existing but unreadable or malformed canonical rules file, or missing `jq`, each reported and never selected around.
 Missing `curl` is a normal structured `error` outcome with exit 0 so firstmate uses today's routing.

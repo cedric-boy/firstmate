@@ -44,7 +44,8 @@
 #     candidate: <harness>:<model> provider=.. scope=.. remaining=..% spendPriority=.. runway=.. -> eligible | eligible, unranked: <reason> | not eligible: <reason>
 #     profile: --harness <h> [--model <m>] [--effort <e>]     (status clear only)
 #   clear     -> pass the profile line to fm-spawn.sh unless you state a reason to override
-#   ambiguous -> confidence below the floor; decide as today from the probabilities
+#   ambiguous -> confidence below the floor, unless an approval-gated rule carries
+#                real probability, which escalates first; decide as today from the probabilities
 #   escalate  -> a rule requires captain approval (it was chosen, or carries real
 #                probability without being the top choice), no candidate is
 #                rankable, or a genuine tie
@@ -373,7 +374,7 @@ RESULT=$(jq -n --arg floor "$CONFIDENCE_FLOOR" --arg mass_floor "$APPROVAL_MASS_
    end) as $answer_use |
   (if $choice != "default" and $rule == null then {invalid: "rule \($choice) is not in the rules file"}
    elif $gated_hit != null and ($rule == null or ($rule.approval // "") != "captain")
-     then {source: $choice, escalate: "approval-gated rule \($gated_hit.key) carries probability \($gated_hit.p) (floor \($mass_floor)) without being the top choice"}
+     then {source: $choice, mass: true, escalate: "approval-gated rule \($gated_hit.key) carries probability \($gated_hit.p) (floor \($mass_floor)) without being the top choice"}
    elif $rule == null then {source: "default", use: profiles($cfg.default // null), note: "no rule matched"}
    elif ($rule.approval // "") == "captain" then {source: $choice, escalate: "rule requires the captain'"'"'s explicit approval before dispatch"}
    elif $rule_floor_state == "unknown" then {source: $choice, escalate: "rule \($choice) floor \($rule.floor.provider)/\($rule.floor.scope) is unverifiable"}
@@ -387,6 +388,8 @@ RESULT=$(jq -n --arg floor "$CONFIDENCE_FLOOR" --arg mass_floor "$APPROVAL_MASS_
     confidence: $a.confidence, probabilities: $a.probabilities
   } as $ev |
   if $sel.invalid then $ev + {status: "error", reason: $sel.invalid}
+  elif $sel.mass then
+    $ev + {status: "escalate", reason: $sel.escalate, candidates: ($answer_use | map(evaluate(.)))}
   elif $a.confidence < ($floor | tonumber) then
     $ev + {status: "ambiguous", reason: "confidence \($a.confidence) below floor \($floor)", candidates: ($answer_use | map(evaluate(.)))}
   elif $sel.escalate then

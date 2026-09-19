@@ -381,6 +381,14 @@ write_probabilities_response "$RESPONSE" default 0.8 0.3 0.6
 TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --project pager
 assert_contains "$out" '  status: escalate' "the none option cannot hide an approval-gated rule carrying real probability"
 assert_contains "$out" 'approval-gated rule rule_3 carries probability 0.3' "the none-option escalation names the gated rule"
+write_probabilities_response "$RESPONSE" rule_4 0.45 0.35 0.45
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --project pager
+assert_contains "$out" '  status: escalate' "a gated rule carrying real probability escalates even below the confidence floor"
+assert_contains "$out" 'reason: approval-gated rule rule_3 carries probability 0.35 (floor 0.2) without being the top choice' "the low-confidence escalation names the gated rule"
+assert_not_contains "$out" '  profile:' "the low-confidence escalation emits no profile line"
+write_probabilities_response "$RESPONSE" rule_4 0.45 0.15 0.45
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --project pager
+assert_contains "$out" '  status: ambiguous' "a gated rule below the probability floor leaves a low-confidence answer ambiguous"
 jq 'del(.rules[2].approval)' "$BASE_RULES" > "$RULES"
 write_probabilities_response "$RESPONSE" rule_4 0.8 0.3 0.68
 TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --project pager
