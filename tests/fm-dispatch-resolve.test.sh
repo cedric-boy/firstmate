@@ -386,6 +386,14 @@ TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --project pager
 assert_contains "$out" '  status: escalate' "a gated rule carrying real probability escalates even below the confidence floor"
 assert_contains "$out" 'reason: approval-gated rule rule_3 carries probability 0.35 (floor 0.2) without being the top choice' "the low-confidence escalation names the gated rule"
 assert_not_contains "$out" '  profile:' "the low-confidence escalation emits no profile line"
+jq -n '{ model: "jev-1.13.0",
+  answers: { rule: { type: "choice", choice: "rule_3", confidence: 0.45,
+    probabilities: {rule_1: 0.1, rule_2: 0.1, rule_3: 0.45, rule_4: 0.25, default: 0.1} } },
+  usage: { input_tokens: 812, output_tokens: 60 } }' > "$RESPONSE"
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --project pager
+assert_contains "$out" '  status: escalate' "a gated top choice escalates even below the confidence floor"
+assert_contains "$out" "  reason: rule requires the captain's explicit approval before dispatch" "the low-confidence gated top choice names the approval gate"
+assert_not_contains "$out" '  profile:' "the low-confidence gated top choice emits no profile line"
 write_probabilities_response "$RESPONSE" rule_4 0.45 0.15 0.45
 TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --project pager
 assert_contains "$out" '  status: ambiguous' "a gated rule below the probability floor leaves a low-confidence answer ambiguous"
@@ -419,6 +427,53 @@ assert_contains "$sent" 'off-by-one in the pager' "the captain's intent is sent"
 assert_contains "$sent" 'Touch only pager.sh.' "the firstmate spec is sent"
 assert_not_contains "$sent" 'SCAFFOLD-ONLY-TEXT' "the shared scaffold is not sent"
 assert_not_contains "$sent" 'crewmate' "text before the task section is not sent"
+HEADING_BRIEF="$TMP_ROOT/heading-brief.md"
+cat > "$HEADING_BRIEF" <<'MD'
+You are a crewmate: an autonomous worker agent.
+
+# Task
+## Captain's intent
+Fix the off-by-one in the pager.
+
+# Notes from the report
+HEADING-IN-INTENT-TEXT the report says the pager also skips a page.
+
+## Firstmate spec
+Touch only pager.sh.
+```sh
+# comment inside a fence
+make pager
+```
+
+# Setup
+SCAFFOLD-ONLY-TEXT about worktrees and status files.
+MD
+reset_log
+TYPESAFE_API_KEY=$KEY run code out err "$HEADING_BRIEF" --project pager
+sent=$(jq -r .state.task.brief "$LOG/body")
+assert_contains "$sent" 'HEADING-IN-INTENT-TEXT' "a heading pasted into the captain's intent does not cut the task"
+assert_contains "$sent" 'Touch only pager.sh.' "the firstmate spec after a pasted heading is sent"
+assert_contains "$sent" '# comment inside a fence' "a comment line inside a code fence does not cut the task"
+assert_contains "$sent" 'make pager' "text after a fenced comment is sent"
+assert_not_contains "$sent" 'SCAFFOLD-ONLY-TEXT' "the scaffold after the spec is still not sent"
+FENCE_BRIEF="$TMP_ROOT/fence-brief.md"
+cat > "$FENCE_BRIEF" <<'MD'
+# Task
+Fix the pager.
+```sh
+# comment inside a fence
+make pager
+```
+More task text.
+
+# Setup
+SCAFFOLD-ONLY-TEXT about worktrees and status files.
+MD
+reset_log
+TYPESAFE_API_KEY=$KEY run code out err "$FENCE_BRIEF" --project pager
+sent=$(jq -r .state.task.brief "$LOG/body")
+assert_contains "$sent" 'More task text.' "a fenced comment does not cut a brief that has no firstmate spec heading"
+assert_not_contains "$sent" 'SCAFFOLD-ONLY-TEXT' "a brief without a spec heading still ends at the scaffold section"
 PLAIN_BRIEF="$TMP_ROOT/plain-brief.md"
 printf '%s\n' 'A plain note with no task heading about the pager.' > "$PLAIN_BRIEF"
 reset_log

@@ -514,7 +514,7 @@ bin/fm-dispatch-resolve.sh data/<id>/brief.md --project <name>        # TOON blo
 
 Firstmate invokes the resolve path directly after writing the brief, without a preflight; the absent-key off line is handled exactly like every other non-clear outcome.
 When on and at least one rule exists, the tool sends the project name and the brief's `# Task` section as state and asks one Choice question whose options are every rule's `when` plus the fixed neutral option for no matching rule; the model never sees quota, catalogs, `why`, `use`, or approvals.
-A brief with no `# Task` heading is sent whole.
+The section runs to the next top-level heading outside a code fence and, when the brief has a `## Firstmate spec` heading, past it, so a heading pasted into the captain's intent or a `# comment` inside a fence stays in the task text; a brief with no `# Task` heading is sent whole.
 The scaffold around that section is identical for every brief, so leaving it out keeps unrelated text from costing Jev accuracy, and the text that is sent goes to typesafe.ai unredacted.
 Jev is most accurate on English, so `AGENTS.md` section 11 keeps an English rendering beside a non-English ask in the brief.
 An absent rules file, a default-only file, or `rules: []` returns the non-clear reason `no rules to match` without a model or quota request, leaving firstmate's existing routing in control; an existing but unreadable or malformed rules file, including a broken symlink, remains an actionable exit 2 configuration error.

@@ -243,8 +243,17 @@ LAT_MS=null
 command -v curl >/dev/null 2>&1 || emit_error "curl not installed"
 # Jev reads only the task's own section: the scaffold around it is identical for
 # every brief, unrelated state costs Jev accuracy, and the text goes to a third
-# party. A brief without a `# Task` heading is sent whole.
-awk '/^# / { keep = ($0 == "# Task") } keep' "$BRIEF" > "$SLICE"
+# party. The section ends at the next top-level heading outside a code fence and,
+# when the brief has a `## Firstmate spec` heading, after it, so a heading pasted
+# into the captain's intent cannot cut the ask. A brief without a `# Task`
+# heading is sent whole.
+awk '
+  NR == FNR { if (/^```/) f = !f; else if (!f && $0 == "## Firstmate spec") spec = 1; next }
+  /^```/ { fence = !fence }
+  !fence && $0 == "## Firstmate spec" { past = 1 }
+  !fence && /^# / { if ($0 == "# Task") keep = 1; else if (keep && (!spec || past)) keep = 0 }
+  keep
+' "$BRIEF" "$BRIEF" > "$SLICE"
 [ -s "$SLICE" ] || cp "$BRIEF" "$SLICE"
   REQUEST=$(jq -n --rawfile brief "$SLICE" --arg project "$PROJECT" --arg model "$TS_MODEL" \
     --arg none_criterion "$DEFAULT_WHEN" --slurpfile rules "$RULES" '
@@ -374,9 +383,9 @@ RESULT=$(jq -n --arg floor "$CONFIDENCE_FLOOR" --arg mass_floor "$APPROVAL_MASS_
    end) as $answer_use |
   (if $choice != "default" and $rule == null then {invalid: "rule \($choice) is not in the rules file"}
    elif $gated_hit != null and ($rule == null or ($rule.approval // "") != "captain")
-     then {source: $choice, mass: true, escalate: "approval-gated rule \($gated_hit.key) carries probability \($gated_hit.p) (floor \($mass_floor)) without being the top choice"}
+     then {source: $choice, gated: true, escalate: "approval-gated rule \($gated_hit.key) carries probability \($gated_hit.p) (floor \($mass_floor)) without being the top choice"}
    elif $rule == null then {source: "default", use: profiles($cfg.default // null), note: "no rule matched"}
-   elif ($rule.approval // "") == "captain" then {source: $choice, escalate: "rule requires the captain'"'"'s explicit approval before dispatch"}
+   elif ($rule.approval // "") == "captain" then {source: $choice, gated: true, escalate: "rule requires the captain'"'"'s explicit approval before dispatch"}
    elif $rule_floor_state == "unknown" then {source: $choice, escalate: "rule \($choice) floor \($rule.floor.provider)/\($rule.floor.scope) is unverifiable"}
    elif $rule_floor_state == "below"
      then {source: "default", use: profiles($cfg.default // null), note: "rule \($choice) floor \($rule.floor.scope) below \($rule.floor.min_percent)%: fall through to default"}
@@ -388,7 +397,7 @@ RESULT=$(jq -n --arg floor "$CONFIDENCE_FLOOR" --arg mass_floor "$APPROVAL_MASS_
     confidence: $a.confidence, probabilities: $a.probabilities
   } as $ev |
   if $sel.invalid then $ev + {status: "error", reason: $sel.invalid}
-  elif $sel.mass then
+  elif $sel.gated then
     $ev + {status: "escalate", reason: $sel.escalate, candidates: ($answer_use | map(evaluate(.)))}
   elif $a.confidence < ($floor | tonumber) then
     $ev + {status: "ambiguous", reason: "confidence \($a.confidence) below floor \($floor)", candidates: ($answer_use | map(evaluate(.)))}
