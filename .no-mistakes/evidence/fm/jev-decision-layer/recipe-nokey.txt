@@ -1,0 +1,2 @@
+Jev inactive: TYPESAFE_API_KEY is absent from this home's .env
+rc=1

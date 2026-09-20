@@ -1,0 +1,20 @@
+## Jev decision layer
+For every real choice in this task - selection, ranking, triage, classification, or evaluation - prepare the options and evidence yourself, then let Jev (typesafe.ai's System One model) choose.
+Write one `choice` question as JSON to `request.json` in your scratch space: `{"model":"jev-1.13.0","state":{<the evidence>},"questions":{"pick":{"type":"choice","instructions":"<the decision to make>","criteria":{"<option>":"<when this option is right>", ...}}}}`.
+Then post it, reading the key from the supervising home's `.env` inside the subshell so it never reaches your output or context:
+
+```bash
+(
+  . '/home/cedric/.no-mistakes/worktrees/548b429e8f0c/01M309VBY1F5T6F86B8XM30Y5F/bin/fm-env-lib.sh'
+  key=$(fmx_env_get TYPESAFE_API_KEY '/tmp/tmp.v1F5n2bPjA/home dir/.env')
+  [ -n "$key" ] || { echo "Jev inactive: TYPESAFE_API_KEY is absent from this home's .env"; exit 1; }
+  curl -sS --max-time 10 -X POST https://api.typesafe.ai/v1/systemone \
+    -H 'Content-Type: application/json' \
+    -H @/dev/fd/3 3< <(printf 'Authorization: Bearer %s\n' "$key") \
+    --data-binary @request.json
+)
+```
+
+The answer is `answers.pick.{choice,probabilities,confidence}` plus `usage`.
+Record the choice, probabilities, confidence, and token usage; report low confidence as an open question instead of smoothing it away.
+Use TypeSafe only; never OpenRouter. If the key is absent, report Jev as inactive instead of silently replacing the decision layer.

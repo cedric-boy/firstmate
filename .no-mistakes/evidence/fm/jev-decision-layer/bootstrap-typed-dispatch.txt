@@ -1,0 +1,18 @@
+## session-start, no key
+TYPED_DISPATCH: inactive - TYPESAFE_API_KEY is absent from the environment and /tmp/tmp.v1F5n2bPjA/home dir/.env; add it to enable Jev decision resolution
+rc=0
+## non-session-start, no key (expect silent)
+rc=0
+## session-start, key in .env
+BOOTSTRAP_INFO: typed dispatch resolution active (Jev decision layer via TypeSafe)
+rc=0
+## non-session-start, key in .env (expect silent)
+rc=0
+## verbose facts, key
+BOOTSTRAP_INFO: typed dispatch resolution active (Jev decision layer via TypeSafe)
+rc=0
+## session-start, env key only
+TYPED_DISPATCH: inactive - TYPESAFE_API_KEY is absent from the environment and /tmp/tmp.v1F5n2bPjA/home dir/.env; add it to enable Jev decision resolution
+rc=0
+## session-start, env key only (TYPESAFE_API_KEY in environment, no .env)
+BOOTSTRAP_INFO: typed dispatch resolution active (Jev decision layer via TypeSafe)
