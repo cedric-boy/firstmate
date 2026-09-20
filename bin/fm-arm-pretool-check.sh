@@ -155,12 +155,17 @@ PREFILTER=${PREFILTER//\"/}
 PREFILTER=${PREFILTER//\'/}
 PREFILTER=${PREFILTER//$'\n'/}
 PREFILTER=${PREFILTER//$'\r'/}
+SELF_KILL_CANDIDATE=0
+if [[ "$CMD" == *pkill* && "$CMD" == *-f* ]] ||
+  { [[ "$CMD" == *ps* && "$CMD" == *grep* && "$CMD" == *kill* ]]; }; then
+  SELF_KILL_CANDIDATE=1
+fi
 case "$CMD" in
   *"\$'"*|*'$"'*) ;;
   *)
     case "$PREFILTER" in
       *fm-watch*) ;;
-      *) exit 0 ;;
+      *) [ "$SELF_KILL_CANDIDATE" -eq 1 ] || exit 0 ;;
     esac
     ;;
 esac

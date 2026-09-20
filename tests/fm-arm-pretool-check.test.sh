@@ -122,6 +122,8 @@ matrix_case D55 deny 'while true; do pkill -f fm-watch; done'
 matrix_case D56 deny 'for x in 1; do pkill -f fm-watch; done'
 matrix_case D57 deny 'case x in x) pkill -f fm-watch ;; esac'
 matrix_case D58 deny 'until false; do kill $(pgrep -f fm-watch); done'
+matrix_case D59 deny "pkill -f 'demo-server'"
+matrix_case D60 deny "ps -eo pid=,args= | grep 'demo-server' | awk '{print \$1}' | xargs -r kill"
 
 matrix_case E01 allow "bin/fm-watch-checkpoint.sh --seconds '180;still-one-arg'"
 matrix_case E02 allow "bin/fm-watch-checkpoint.sh --label 'fm-watch-arm.sh; literal argument'"
@@ -183,7 +185,7 @@ run_matrix_entry() {
   fi
 
   [ "$rc" -eq 2 ] || fail "$id via $entry must deny, got exit $rc"
-  jq -e '.hookSpecificOutput.permissionDecision == "deny" and (.systemMessage | test("\\[(watcher-(background|pipeline|redirection|bundled|nested|direct)|broad-watcher-kill|unclassifiable-protected-command)\\]"))' "$err_file" >/dev/null 2>&1 \
+  jq -e '.hookSpecificOutput.permissionDecision == "deny" and (.systemMessage | test("\\[(watcher-(background|pipeline|redirection|bundled|nested|direct)|broad-watcher-kill|agent-self-kill|unclassifiable-protected-command)\\]"))' "$err_file" >/dev/null 2>&1 \
     || fail "$id via $entry deny must carry a stable reason code on stderr: $(cat "$err_file")"
   if [ "$entry" = claude ]; then
     [ ! -s "$out_file" ] || fail "$id via claude deny must leave stdout empty: $(cat "$out_file")"
@@ -218,6 +220,9 @@ test_direct_policy_contract() {
   local heredoc_data heredoc_watcher
   assert_policy direct-data-pkill allow "echo 'pkill -f fm-watch'"
   assert_policy direct-broad-pkill $'deny\tbroad-watcher-kill' "pkill -f '/bin/fm-watch.sh'"
+  assert_policy direct-agent-pattern-kill $'deny\tagent-self-kill' "pkill -f 'demo-server'"
+  assert_policy direct-agent-ps-grep-kill $'deny\tagent-self-kill' "ps -eo pid=,args= | grep 'demo-server' | awk '{print \$1}' | xargs -r kill"
+  assert_policy direct-recorded-pid-kill allow 'kill 424242'
   assert_policy direct-loop-broad-pkill $'deny\tbroad-watcher-kill' 'while true; do pkill -f fm-watch; done'
   assert_policy direct-loop-broad-kill-pgrep $'deny\tbroad-watcher-kill' 'until false; do kill $(pgrep -f fm-watch); done'
   assert_policy direct-loop-no-kill-allowed allow 'for f in 1; do echo fm-watch; done'
@@ -237,6 +242,34 @@ test_direct_policy_contract() {
   heredoc_watcher=$'bin/fm-watch-arm.sh <<\'EOF\'\ndata only\nEOF'
   assert_policy direct-heredoc-data allow "$heredoc_data"
   assert_policy direct-heredoc-watcher $'deny\twatcher-redirection' "$heredoc_watcher"
+}
+
+test_agent_self_kill_patterns_use_real_processes() {
+  local pattern pid args rc out
+  pattern="fm-selfkill-test-$$"
+  bash -c "exec -a '$pattern' sleep 30" &
+  pid=$!
+  trap 'kill "$pid" 2>/dev/null || true' RETURN
+  sleep 0.05
+  args=$(ps -o args= -p "$pid") || fail "real process fixture did not start"
+  printf '%s' "$args" | grep -F "$pattern" >/dev/null || fail "real process fixture command line did not carry the pattern"
+  kill -0 "$pid" 2>/dev/null || fail "real process fixture exited too early"
+
+  out=$("$CHECK" --command "ps -eo pid=,args= | grep '$pattern' | awk '{print \$1}' | xargs -r kill" 2>&1)
+  rc=$?
+  [ "$rc" -eq 2 ] || fail "ps | grep | kill shape must be denied, got exit $rc: $out"
+  printf '%s' "$out" | grep -F 'agent-self-kill' >/dev/null || fail "ps | grep | kill denial must name the self-kill reason: $out"
+  printf '%s' "$out" | grep -F '[s]erver' >/dev/null || fail "self-kill denial must name the bracketed-pattern rewrite: $out"
+
+  out=$("$CHECK" --command "pkill -f '$pattern'" 2>&1)
+  rc=$?
+  [ "$rc" -eq 2 ] || fail "pkill -f pattern shape must be denied, got exit $rc: $out"
+  kill -0 "$pid" 2>/dev/null || fail "seatbelt check must not kill the real process fixture"
+
+  "$CHECK" --command "kill '$pid'" >/dev/null 2>&1
+  rc=$?
+  [ "$rc" -eq 0 ] || fail "recorded-pid kill must remain allowed, got exit $rc"
+  pass "real process self-kill patterns are denied while recorded-pid kill remains allowed"
 }
 
 # --- CLI parsing -------------------------------------------------------------
@@ -455,6 +488,7 @@ test_shellcheck_clean() {
 }
 
 test_full_acceptance_matrix
+test_agent_self_kill_patterns_use_real_processes
 test_direct_policy_contract
 test_command_equals_form
 test_background_flag_accepted_and_non_gating
