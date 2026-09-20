@@ -360,13 +360,37 @@ IFS= read -r -d '' TASK_SECTION <<'EOF' || true
 
 ## Firstmate spec
 {FIRSTMATE_SPEC}
-
-## Jev decision layer
-For every real choice in this task - selection, ranking, triage, classification, or evaluation - prepare the options and evidence yourself, then let Jev choose through the TypeSafe recipe in `bin/fm-dispatch-resolve.sh` (`https://api.typesafe.ai/v1/systemone`, model `jev-latest`).
-Record the choice, probabilities, confidence, and token usage; report low confidence as an open question instead of smoothing it away.
-Use TypeSafe only; never OpenRouter. If this home's `TYPESAFE_API_KEY` is absent, report Jev as inactive instead of silently replacing the decision layer.
 EOF
 TASK_SECTION=${TASK_SECTION%$'\n'}
+
+JEV_ENV_LIB=$(shell_quote "$FM_ROOT/bin/fm-env-lib.sh")
+JEV_ENV_FILE=$(shell_quote "$FM_HOME/.env")
+IFS= read -r -d '' JEV_SECTION <<EOF || true
+## Jev decision layer
+For every real choice in this task - selection, ranking, triage, classification, or evaluation - prepare the options and evidence yourself, then let Jev (typesafe.ai's System One model) choose.
+Write one \`choice\` question as JSON to \`request.json\` in your scratch space: \`{"model":"jev-1.13.0","state":{<the evidence>},"questions":{"pick":{"type":"choice","instructions":"<the decision to make>","criteria":{"<option>":"<when this option is right>", ...}}}}\`.
+Then post it, reading the key from the supervising home's \`.env\` inside the subshell so it never reaches your output or context:
+
+\`\`\`bash
+(
+  . $JEV_ENV_LIB
+  key=\$(fmx_env_get TYPESAFE_API_KEY $JEV_ENV_FILE)
+  [ -n "\$key" ] || { echo "Jev inactive: TYPESAFE_API_KEY is absent from this home's .env"; exit 1; }
+  curl -sS --max-time 10 -X POST https://api.typesafe.ai/v1/systemone \\
+    -H 'Content-Type: application/json' \\
+    -H @/dev/fd/3 3< <(printf 'Authorization: Bearer %s\\n' "\$key") \\
+    --data-binary @request.json
+)
+\`\`\`
+
+The answer is \`answers.pick.{choice,probabilities,confidence}\` plus \`usage\`.
+Record the choice, probabilities, confidence, and token usage; report low confidence as an open question instead of smoothing it away.
+Use TypeSafe only; never OpenRouter. If the key is absent, report Jev as inactive instead of silently replacing the decision layer.
+EOF
+JEV_SECTION=${JEV_SECTION%$'\n'}
+TASK_SECTION="$TASK_SECTION
+
+$JEV_SECTION"
 
 if [ "$KIND" = scout ]; then
 if "$SCRIPT_DIR/fm-bootstrap.sh" lavish-compatible >/dev/null 2>&1; then

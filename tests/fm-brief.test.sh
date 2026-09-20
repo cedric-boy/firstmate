@@ -215,7 +215,7 @@ test_ship_modes_generate_clean_briefs() {
     assert_grep "## Firstmate spec" "$brief" "$id: brief missing Firstmate spec subsection"
     assert_grep "## Jev decision layer" "$brief" "$id: brief missing Jev decision-layer section"
     assert_grep "https://api.typesafe.ai/v1/systemone" "$brief" "$id: brief lost the TypeSafe endpoint"
-    assert_grep "model \`jev-latest\`" "$brief" "$id: brief lost the TypeSafe Jev model"
+    assert_grep '"model":"jev-1.13.0"' "$brief" "$id: brief lost the TypeSafe Jev model"
     assert_grep "Record the choice, probabilities, confidence, and token usage" "$brief" "$id: brief lost Jev decision evidence requirements"
     assert_grep "never OpenRouter" "$brief" "$id: brief did not forbid OpenRouter"
     assert_grep 'never a bare number such as "PR 108"' "$brief" "$id: brief missing the full-PR-URL rule"
@@ -227,16 +227,48 @@ test_ship_modes_generate_clean_briefs() {
 }
 
 test_scout_brief_carries_jev_decision_layer() {
-  local home brief
-  home="$TMP_ROOT/jev-scout-home"
-  mkdir -p "$home/data"
+  local home brief recipe bin work argv out rc secret
+  secret="jev-secret-$$"
+  home="$TMP_ROOT/jev scout home"
+  bin="$TMP_ROOT/jev-bin"
+  work="$TMP_ROOT/jev-work"
+  mkdir -p "$home/data" "$bin" "$work"
   FM_HOME="$home" "$ROOT/bin/fm-brief.sh" jev-scout sample --scout >/dev/null 2>&1 \
     || fail "scout brief failed to scaffold"
   brief="$home/data/jev-scout/brief.md"
   assert_grep "## Jev decision layer" "$brief" "scout brief missing Jev decision-layer section"
-  assert_grep "If this home's \`TYPESAFE_API_KEY\` is absent, report Jev as inactive" "$brief" \
-    "scout brief did not surface the per-home inactive state"
-  pass "fm-brief.sh: ship and scout briefs carry the compact Jev decision-layer rule"
+  recipe="$TMP_ROOT/jev-recipe.sh"
+  awk '/^```bash$/ { on = 1; next } /^```$/ { on = 0 } on' "$brief" > "$recipe"
+  [ -s "$recipe" ] || fail "scout brief carries no executable Jev recipe"
+  argv="$TMP_ROOT/jev-argv"
+  cat > "$bin/curl" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$@" > "$JEV_ARGV"
+while [ $# -gt 0 ]; do
+  if [ "$1" = -H ] && [ "$2" = @/dev/fd/3 ]; then cat /dev/fd/3 >> "$JEV_ARGV"; fi
+  shift
+done
+echo '{"answers":{"pick":{"choice":"a"}}}'
+STUB
+  chmod +x "$bin/curl"
+  printf '{}' > "$work/request.json"
+
+  out=$(cd "$work" && PATH="$bin:$PATH" JEV_ARGV="$argv" bash "$recipe" 2>&1); rc=$?
+  [ "$rc" -ne 0 ] || fail "recipe ran without a key instead of reporting Jev inactive"
+  assert_contains "$out" "Jev inactive" "recipe did not report the per-home inactive state"
+  [ ! -e "$argv" ] || fail "recipe called TypeSafe without a key"
+
+  printf 'TYPESAFE_API_KEY=%s\n' "$secret" > "$home/.env"
+  out=$(cd "$work" && PATH="$bin:$PATH" JEV_ARGV="$argv" bash "$recipe" 2>&1); rc=$?
+  expect_code 0 "$rc" "recipe failed with the home key present (got: $out)"
+  assert_contains "$out" '"choice":"a"' "recipe did not return the TypeSafe answer"
+  assert_grep "https://api.typesafe.ai/v1/systemone" "$argv" "recipe posted to the wrong endpoint"
+  assert_grep "Authorization: Bearer $secret" "$argv" "recipe did not authenticate with the home key"
+  assert_grep "@request.json" "$argv" "recipe did not post the request file"
+  if grep -q -- "$secret" <<<"$(grep -v '^Authorization:' "$argv")"; then
+    fail "recipe exposed the key in curl arguments"
+  fi
+  pass "fm-brief.sh: the Jev recipe runs from the brief with the supervising home's key and stays keyless when it is absent"
 }
 
 # A ship task's delivery mode is firstmate's per-task decision, so a missing or
