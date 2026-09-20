@@ -32,17 +32,18 @@ The wrapper discovers the code root from its own location.
 The active firstmate home is `${FM_HOME:-<code-root>}`.
 It passes both roots and the exact command string to the Node policy owner.
 
-The wrapper fast-allows a command without invoking the Node policy owner only when the command cannot contain the `fm-watch` byte sequence even after the classifier's decoders run.
-The fast path may allow only when both of these hold:
+The wrapper fast-allows a command without invoking the Node policy owner only when the command can be neither a watcher command nor an agent self-kill shape, even after the classifier's decoders run.
+The fast path may allow only when all of these hold:
 
 1. The stripped text lacks the `fm-watch` watcher substring, after mirroring the classifier's cheapest byte normalizations - dropping line-continuation and escape backslashes, quotes, and newlines.
-2. The raw command carries no quoting-decoder marker: a `$` immediately followed by a single quote (ANSI-C `$'...'`) or a double quote (bash locale `$"..."`).
+2. The same stripped text carries no self-kill candidate bytes: `pkill`, or `kill` together with `pgrep` or with both `ps` and `grep`.
+3. The raw command carries no quoting-decoder marker: a `$` immediately followed by a single quote (ANSI-C `$'...'`) or a double quote (bash locale `$"..."`).
 
-Any `fm-watch` match or any quoting-decoder marker delegates to the classifier.
+Any `fm-watch` match, any self-kill candidate, or any quoting-decoder marker delegates to the classifier.
 Normalizing first keeps this a strict superset: a protected watcher path obfuscated as `fm-watc\<newline>h-arm.sh` or `fm-"watch"-arm.sh` still delegates, and stripping only those non-alphanumeric bytes can never destroy an existing `fm-watch` run.
 The quoting-decoder marker closes the case the byte strip cannot: `bin/fm-$'\x77'atch-arm.sh` and `bin/fm-$"watch"-arm.sh` both resolve to `bin/fm-watch-arm.sh` only after the classifier decodes the encoded character, so a cheap byte strip would otherwise lose the `fm-watch` bytes and fast-allow them.
 This marker set is coupled to the classifier's decoder set in `bin/fm-arm-command-policy.mjs`: adding any new quote or expansion form the classifier decodes requires extending this marker set in the same change, or the prefilter stops being a strict superset.
-The prefilter owns no semantic exception: it can only ever fast-allow a command that is definitely not a watcher command, so it never flips a classification and the classifier remains the single owner of every decision.
+The prefilter owns no semantic exception: it can only ever fast-allow a command that is definitely neither a watcher command nor a self-kill shape, so it never flips a classification and the classifier remains the single owner of every decision.
 
 The seatbelt's threat model is agent mistakes: no one accidentally writes an ANSI-C- or locale-obfuscated watcher path, and deliberate obfuscation is the post-arm liveness guard's territory.
 The marker guard closes the static gap anyway because it is cheap and provable per encoding class.
@@ -125,10 +126,16 @@ When the command carries such grammar and its raw bytes reference both a `fm-wat
 This backstop mirrors the protected-execution fail-closed rule and covers forms like `while true; do pkill -f fm-watch; done`, `for x in 1; do pkill -f fm-watch; done`, `case x in x) pkill -f fm-watch ;; esac`, and `until false; do kill $(pgrep -f fm-watch); done`.
 It is gated on the grammar being unsupported: in grammar the classifier does model, command-position analysis is authoritative, so data mentions such as `echo 'pkill -f fm-watch'` and a loop that only names the watcher without a kill verb such as `for f in 1; do echo fm-watch; done` remain allowed.
 
-The seatbelt also denies `pkill -f <pattern>` and a pipeline that combines `ps`, `grep`, and `kill` or `xargs kill`.
-These process-pattern shapes can match the invoking agent's own command line when the task text carries the pattern.
-Use a bracketed pattern such as `[s]erver` when a pattern kill is necessary, or kill a recorded pid directly.
-The direct-pid form remains allowed for an unrelated process.
+The seatbelt also denies process-pattern kills, because an agent's own command line carries its whole task text, so a pattern naming a command from that text matches the agent itself, and a bracketed pattern such as `[s]erver` still matches the unbracketed text.
+The denied shapes are `pkill` or `pgrep` with a full-command-line flag (`-f`, a short-flag cluster containing `f` such as `-fl` or `-af`, or `--full`) and a `ps ... | grep ...` search.
+`pkill -f` is denied outright.
+A `pgrep -f` or `ps | grep` search is denied when its output reaches a kill: `kill` or `xargs kill` later in the same pipeline, or `kill $(...)` around the search.
+A kill of a recorded pid, a `ps | grep` with no kill, and a `ps -p <pid> | grep ... && kill <pid>` sequence stay allowed.
+A search whose result is stored in a variable or consumed across a loop is not modelled.
+Kill a recorded pid, one captured when the process was started.
+
+This seatbelt covers firstmate-rooted sessions only: it is wired as a primary-session hook, and `bin/fm-spawn.sh` does not install it into a crewmate's own settings, so a crewmate working in another project's worktree never runs it.
+The rule that reaches every crewmate on every harness is the self-matching-kill paragraph of the worker role contract that `bin/fm-dod-lib.sh` emits as the first section of every ship/scout launch brief.
 
 ## Stable reason codes
 
@@ -142,7 +149,7 @@ Every semantic deny includes one stable code in square brackets before its prose
 | `watcher-bundled` | The outer command list is not the blessed setup-plus-final tree. |
 | `watcher-nested` | A wrapper, group, substitution, nested shell, `eval`, or constructed dynamic payload executes the protected command. |
 | `broad-watcher-kill` | An actual broad process kill targets the watcher. |
-| `agent-self-kill` | A `pkill -f` or `ps \| grep \| kill`-shaped process-pattern kill can match the invoking agent; use a bracketed pattern or a recorded pid. |
+| `agent-self-kill` | A `pkill -f`, or a `pgrep -f` or `ps \| grep` search feeding a kill, can match the invoking agent's own command line; kill a recorded pid. |
 | `unclassifiable-protected-command` | Malformed or unsupported syntax contains a protected command and cannot be safely classified. |
 | `watcher-direct` | A direct `bin/fm-watch.sh` execution; the watcher must be reached through `bin/fm-watch-arm.sh` or `bin/fm-watch-checkpoint.sh`. |
 

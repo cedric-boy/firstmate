@@ -124,6 +124,15 @@ matrix_case D57 deny 'case x in x) pkill -f fm-watch ;; esac'
 matrix_case D58 deny 'until false; do kill $(pgrep -f fm-watch); done'
 matrix_case D59 deny "pkill -f 'demo-server'"
 matrix_case D60 deny "ps -eo pid=,args= | grep 'demo-server' | awk '{print \$1}' | xargs -r kill"
+matrix_case D61 deny "pkill -fl 'demo-server'"
+matrix_case D62 deny "pkill -9 -af 'demo-server'"
+matrix_case D63 deny "pkill --full 'demo-server'"
+matrix_case D64 deny "pkill -f '[d]emo-server'"
+matrix_case D65 deny "ps aux | grep '[d]emo-server' | awk '{print \$2}' | xargs kill"
+matrix_case D66 deny "kill \$(ps aux | grep 'demo-server' | awk '{print \$2}')"
+matrix_case D67 deny "kill -9 \$(pgrep -f 'demo-server')"
+matrix_case D68 deny "pgrep -f 'demo-server' | xargs kill"
+matrix_case D69 deny "pk''ill -f 'demo-server'"
 
 matrix_case E01 allow "bin/fm-watch-checkpoint.sh --seconds '180;still-one-arg'"
 matrix_case E02 allow "bin/fm-watch-checkpoint.sh --label 'fm-watch-arm.sh; literal argument'"
@@ -142,6 +151,12 @@ matrix_case E14 allow '$FM_HOME/bin/fm-teardown.sh &'
 matrix_case E15 allow '$FM_HOME/bin/fm-watch-arm.sh'
 matrix_case E16 allow '~/firstmate/bin/fm-watch-checkpoint.sh --seconds 180'
 matrix_case E17 allow 'for f in 1; do echo fm-watch; done'
+matrix_case E18 allow 'kill 424242'
+matrix_case E19 allow 'ps -p 1234 | grep -q node && kill 1234'
+matrix_case E20 allow 'ps aux | grep demo-server | wc -l; kill 123'
+matrix_case E21 allow "ps aux | grep 'demo-server'"
+matrix_case E22 allow "pgrep -f 'demo-server' | wc -l"
+matrix_case E23 allow "pgrep -x demo-server"
 
 MATRIX_TMP=$(mktemp -d "${TMPDIR:-/tmp}/fm-arm-policy-matrix.XXXXXX")
 FM_TEST_CLEANUP_DIRS+=("$MATRIX_TMP")
@@ -222,7 +237,12 @@ test_direct_policy_contract() {
   assert_policy direct-broad-pkill $'deny\tbroad-watcher-kill' "pkill -f '/bin/fm-watch.sh'"
   assert_policy direct-agent-pattern-kill $'deny\tagent-self-kill' "pkill -f 'demo-server'"
   assert_policy direct-agent-ps-grep-kill $'deny\tagent-self-kill' "ps -eo pid=,args= | grep 'demo-server' | awk '{print \$1}' | xargs -r kill"
+  assert_policy direct-agent-pattern-kill-cluster $'deny\tagent-self-kill' "pkill -fl 'demo-server'"
+  assert_policy direct-agent-pattern-kill-bracketed $'deny\tagent-self-kill' "pkill -f '[d]emo-server'"
+  assert_policy direct-agent-kill-substitution $'deny\tagent-self-kill' "kill \$(ps aux | grep 'demo-server' | awk '{print \$2}')"
+  assert_policy direct-agent-pgrep-xargs-kill $'deny\tagent-self-kill' "pgrep -f 'demo-server' | xargs kill"
   assert_policy direct-recorded-pid-kill allow 'kill 424242'
+  assert_policy direct-unrelated-kill-after-search allow 'ps aux | grep demo-server | wc -l; kill 123'
   assert_policy direct-loop-broad-pkill $'deny\tbroad-watcher-kill' 'while true; do pkill -f fm-watch; done'
   assert_policy direct-loop-broad-kill-pgrep $'deny\tbroad-watcher-kill' 'until false; do kill $(pgrep -f fm-watch); done'
   assert_policy direct-loop-no-kill-allowed allow 'for f in 1; do echo fm-watch; done'
@@ -259,7 +279,12 @@ test_agent_self_kill_patterns_use_real_processes() {
   rc=$?
   [ "$rc" -eq 2 ] || fail "ps | grep | kill shape must be denied, got exit $rc: $out"
   printf '%s' "$out" | grep -F 'agent-self-kill' >/dev/null || fail "ps | grep | kill denial must name the self-kill reason: $out"
-  printf '%s' "$out" | grep -F '[s]erver' >/dev/null || fail "self-kill denial must name the bracketed-pattern rewrite: $out"
+  printf '%s' "$out" | grep -F 'recorded pid' >/dev/null || fail "self-kill denial must name the recorded-pid remedy: $out"
+
+  out=$("$CHECK" --command "ps -eo pid=,args= | grep '[f]m-selfkill-test-$$' | awk '{print \$1}' | xargs -r kill" 2>&1)
+  rc=$?
+  [ "$rc" -eq 2 ] || fail "bracketed ps | grep | kill shape must be denied, got exit $rc: $out"
+  kill -0 "$pid" 2>/dev/null || fail "seatbelt check must not kill the real process fixture"
 
   out=$("$CHECK" --command "pkill -f '$pattern'" 2>&1)
   rc=$?

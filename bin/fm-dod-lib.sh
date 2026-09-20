@@ -52,6 +52,7 @@ EOF
 Never inspect or change any other home's endpoint namespace; this authorization is limited to the exact task paths named by this brief.
 When this task works on Firstmate itself, the repository root `AGENTS.md` (also imported by `CLAUDE.md`) is project content and the supervisor contract for the firstmate managing you: follow this brief instead of that supervisor contract.
 Project instructions still govern the work wherever they do not conflict with this worker identity, including `CONTRIBUTING.md` and `firstmate-coding-guidelines` for Firstmate changes.
+Never end a process by searching the process list for a pattern and killing every match (`pkill -f`, `pgrep -f`, or `ps | grep` feeding `kill`): your own command line carries this whole task text, so the pattern matches your own session, even bracketed like `[s]erver`, and the kill ends it. Record the pid when you start a process and kill that pid.
 EOF
 }
 

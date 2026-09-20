@@ -130,15 +130,19 @@ fi
 # Every protected watcher execution and every broad watcher kill resolves to the
 # fm-watch byte sequence AFTER the classifier's byte normalization, so a command
 # that cannot contain fm-watch even after that normalization can never be a
-# deniable watcher command and is fast-allowed without the Node policy owner.
+# deniable watcher command. Every agent self-kill shape (pkill, or a pgrep or
+# ps-plus-grep search feeding a kill) likewise needs the pkill, pgrep, or
+# ps/grep/kill bytes after that same normalization. A command lacking both byte
+# sets is fast-allowed without the Node policy owner.
 # We mirror the classifier's cheapest byte transforms here (drop line-
 # continuation and escape backslashes, quotes, and newlines) so obfuscated
 # protected paths such as fm-watc\<newline>h-arm.sh or fm-"watch"-arm.sh still
 # delegate. Stripping only these non-alphanumeric bytes can never destroy an
 # existing fm-watch run.
 #
-# The fast path may allow ONLY when BOTH hold: (a) the stripped/normalized text
-# lacks the fm-watch watcher substring, AND (b) the raw command carries no
+# The fast path may allow ONLY when ALL hold: (a) the stripped/normalized text
+# lacks the fm-watch watcher substring, (b) the stripped/normalized text carries
+# no self-kill candidate bytes, AND (c) the raw command carries no
 # quoting-decoder marker - a $ immediately followed by a single quote (ANSI-C
 # $'...') or a double quote (bash locale $"..."), both of which the classifier
 # decodes and can therefore reconstruct fm-watch from bytes this cheap byte
@@ -156,8 +160,8 @@ PREFILTER=${PREFILTER//\'/}
 PREFILTER=${PREFILTER//$'\n'/}
 PREFILTER=${PREFILTER//$'\r'/}
 SELF_KILL_CANDIDATE=0
-if [[ "$CMD" == *pkill* && "$CMD" == *-f* ]] ||
-  { [[ "$CMD" == *ps* && "$CMD" == *grep* && "$CMD" == *kill* ]]; }; then
+if [[ "$PREFILTER" == *pkill* ]] ||
+  { [[ "$PREFILTER" == *kill* ]] && { [[ "$PREFILTER" == *pgrep* ]] || { [[ "$PREFILTER" == *ps* && "$PREFILTER" == *grep* ]]; }; }; }; then
   SELF_KILL_CANDIDATE=1
 fi
 case "$CMD" in

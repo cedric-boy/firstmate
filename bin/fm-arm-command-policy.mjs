@@ -24,7 +24,7 @@ const REASONS = {
   "watcher-bundled": "a protected watcher command must be the sole final command after approved setup nodes",
   "watcher-nested": "a protected watcher command must not run through a wrapper, substitution, or compound command",
   "broad-watcher-kill": "a broad process kill targeting the firstmate watcher is forbidden",
-  "agent-self-kill": "process-pattern kills are forbidden because the pattern can match the invoking agent; use a bracketed pattern such as [s]erver or kill a recorded pid",
+  "agent-self-kill": "process-pattern kills are forbidden because the pattern can match the invoking agent's own command line, even when the pattern is bracketed; kill a recorded pid instead",
   "unclassifiable-protected-command": "unsupported or malformed shell syntax contains a protected watcher command",
   "watcher-direct": "bin/fm-watch.sh must not be run directly; arm the watcher with bin/fm-watch-arm.sh or run bin/fm-watch-checkpoint.sh instead",
 };
@@ -727,6 +727,17 @@ function isWatcherPgrep(position, context) {
   return position.words.slice(position.index + 1).some((word) => /(?:^|\/)fm-watch(?:\.sh)?\b/.test(word.value) || wordReferencesAny(word, context.watcherPatterns));
 }
 
+const FULL_COMMAND_LINE_FLAG = /^-[A-Za-z0-9]*f[A-Za-z0-9]*$/;
+const GREP_COMMANDS = ["grep", "egrep", "fgrep"];
+
+function matchesFullCommandLine(args) {
+  return args.some((word) => word.value === "--full" || FULL_COMMAND_LINE_FLAG.test(word.value));
+}
+
+function isKillSink(commandName, args) {
+  return commandName === "kill" || (commandName === "xargs" && args.some((word) => basename(word.value) === "kill"));
+}
+
 function analyzeProgram(command, context, depth = 0) {
   if (depth > 12) {
     return { error: "recursion limit", protectedFound: rawMentionsProtected(command), broadKill: rawMentionsBroadKill(command), selfKill: false, pgrepWatcher: false, watcherPids: new Set() };
@@ -740,6 +751,8 @@ function analyzeProgram(command, context, depth = 0) {
   let nestedProtected = false;
   let broadKill = false;
   let selfKill = false;
+  let patternSearch = false;
+  let pipeline = { ps: false, search: false };
   let pgrepWatcher = false;
   let unsupported = false;
   let activeContext = {
@@ -750,7 +763,7 @@ function analyzeProgram(command, context, depth = 0) {
   };
   let unclassifiableProtected = false;
 
-  for (const tokens of program.nodes) {
+  for (const [nodeIndex, tokens] of program.nodes.entries()) {
     const position = commandPosition(tokens);
     const nodeContext = contextWithAssignments(activeContext, position.words);
     const firstName = basename(position.words[0]?.value || "");
@@ -829,7 +842,16 @@ function analyzeProgram(command, context, depth = 0) {
     const commandName = basename(executable);
     const args = position.words.slice(position.index + 1);
     if (commandName === "pkill" && args.some((word) => /fm-watch/.test(word.value) || wordReferencesAny(word, nodeContext.watcherPatterns))) broadKill = true;
-    if (commandName === "pkill" && args.some((word) => word.value === "-f" || word.value === "--full")) selfKill = true;
+    const fullCommandLine = matchesFullCommandLine(args);
+    if (commandName === "pkill" && fullCommandLine) selfKill = true;
+    if (!["|", "|&"].includes(program.separators[nodeIndex - 1])) pipeline = { ps: false, search: false };
+    if (commandName === "ps") pipeline.ps = true;
+    if ((commandName === "pgrep" && fullCommandLine) || (pipeline.ps && GREP_COMMANDS.includes(commandName))) {
+      pipeline.search = true;
+      patternSearch = true;
+    }
+    if (isKillSink(commandName, args) && pipeline.search) selfKill = true;
+    if (commandName === "kill" && [...substitutionResults.values()].some((nested) => nested.patternSearch)) selfKill = true;
     if (commandName === "kill" && (nodePgrepWatcher || args.some((word) => wordReferencesAny(word, nodeContext.watcherPids)))) broadKill = true;
     if (isWatcherPgrep(position, nodeContext)) pgrepWatcher = true;
     if (hasDynamicExecutionPayload(position, nodeContext) || wordReferencesAny(position.command, nodeContext.protectedVariables)) nodeNestedProtected = true;
@@ -856,17 +878,10 @@ function analyzeProgram(command, context, depth = 0) {
   const protectedFound = directProtected || nestedProtected || unclassifiableProtected;
   if (unclassifiableProtected) unsupported = true;
   const broadKillFound = broadKill || (unsupported && rawMentionsBroadKill(command));
-  const pipelineCommands = nodeInfos.map((info) => basename(info.position.command?.value || ""));
-  const hasPsGrepPipeline = program.separators.includes("|") && pipelineCommands.includes("ps") && pipelineCommands.includes("grep");
-  const hasPipelineKill = pipelineCommands.includes("kill") || nodeInfos.some((info) => {
-    const words = info.position.words.slice(info.position.index + 1).map((word) => word.value);
-    return basename(info.position.command?.value || "") === "xargs" && words.includes("kill");
-  });
-  if (hasPsGrepPipeline && hasPipelineKill) selfKill = true;
   if (unsupported && (protectedFound || rawMentionsProtected(command) || broadKillFound)) {
-    return { error: "unsupported compound grammar", protectedFound: true, broadKill: broadKillFound, selfKill, pgrepWatcher, watcherPids: activeContext.watcherPids, program, nodeInfos };
+    return { error: "unsupported compound grammar", protectedFound: true, broadKill: broadKillFound, selfKill, patternSearch, pgrepWatcher, watcherPids: activeContext.watcherPids, program, nodeInfos };
   }
-  return { error: "", protectedFound, directProtected, nestedProtected, broadKill: broadKillFound, selfKill, pgrepWatcher, watcherPids: activeContext.watcherPids, program, nodeInfos };
+  return { error: "", protectedFound, directProtected, nestedProtected, broadKill: broadKillFound, selfKill, patternSearch, pgrepWatcher, watcherPids: activeContext.watcherPids, program, nodeInfos };
 }
 
 function xModePathAllowed(value, home) {
