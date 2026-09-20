@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// Semantic policy for watcher arm and checkpoint shell commands.
+// Semantic policy for watcher arm and checkpoint shell commands, and for
+// process-pattern kills that can match the invoking agent's own command line.
 //
 // This parser is deliberately narrow.
 // It recognizes executed command positions without evaluating, expanding,

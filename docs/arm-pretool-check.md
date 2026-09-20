@@ -11,6 +11,7 @@ The tracked harness adapters forward command text without classifying it.
 A firstmate primary must arm `bin/fm-watch-arm.sh` or run `bin/fm-watch-checkpoint.sh` through an observable harness call.
 A shell background operator, pipeline, redirection, wrapper, or unrelated command list can hide failure or let the watcher child die with the tool call.
 The seatbelt rejects those command shapes before execution.
+It also rejects process-pattern kills that can match the invoking agent's own command line (see "Agent self-kill patterns").
 
 This policy is not a post-arm liveness guarantee.
 `bin/fm-guard.sh` and `bin/fm-turnend-guard.sh` apply their respective post-arm supervision predicates to the watcher lock and beacon after an allowed call.
@@ -125,6 +126,8 @@ Unsupported compound grammar - a loop, `case`, `if`, or other construct the clas
 When the command carries such grammar and its raw bytes reference both a `fm-watch` target and a `pkill` or `kill` verb, the classifier cannot prove which command position the kill occupies, so it denies with `broad-watcher-kill` rather than allowing.
 This backstop mirrors the protected-execution fail-closed rule and covers forms like `while true; do pkill -f fm-watch; done`, `for x in 1; do pkill -f fm-watch; done`, `case x in x) pkill -f fm-watch ;; esac`, and `until false; do kill $(pgrep -f fm-watch); done`.
 It is gated on the grammar being unsupported: in grammar the classifier does model, command-position analysis is authoritative, so data mentions such as `echo 'pkill -f fm-watch'` and a loop that only names the watcher without a kill verb such as `for f in 1; do echo fm-watch; done` remain allowed.
+
+## Agent self-kill patterns
 
 The seatbelt also denies process-pattern kills, because an agent's own command line carries its whole task text, so a pattern naming a command from that text matches the agent itself, and a bracketed pattern such as `[s]erver` still matches the unbracketed text.
 The denied shapes are `pkill` or `pgrep` with a full-command-line flag (`-f`, a short-flag cluster containing `f` such as `-fl` or `-af`, or `--full`) and a `ps ... | grep ...` search.
