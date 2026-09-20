@@ -72,6 +72,11 @@
 # it carries the AGENTS.md authoring bar (widely useful knowledge only, pointers
 # over copied detail) and defers self-governance recognition and insertion to
 # fm-ensure-agents-md.sh's contract.
+# Ship and scout briefs also carry a Jev decision-layer section: a runnable
+# TypeSafe recipe whose subshell reads TYPESAFE_API_KEY from the supervising
+# home's .env by absolute path, so the key never reaches the worker's output or
+# context and an absent key reports Jev inactive instead of substituting a
+# decision.
 # Scaffolds carry no role scope: fm-spawn.sh supplies fm_brief_worker_role from
 # fm-dod-lib.sh to every ship/scout launch brief, so this file never becomes a
 # second owner of a contract that must stay current across relaunches.

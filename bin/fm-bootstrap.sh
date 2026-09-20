@@ -114,6 +114,12 @@
 #          X-mode artifacts, project clones, or repair instructions.
 #          Unset/0 (the default) runs all six sweeps - this flag is purely
 #          additive.
+#          fm-session-start.sh sets FM_BOOTSTRAP_SESSION_START=1 so a session
+#          start states the typed-dispatch (Jev) activation for this home: an
+#          absent TYPESAFE_API_KEY prints one TYPED_DISPATCH line, and a present
+#          one prints a BOOTSTRAP_INFO fact. Outside a session start only
+#          FM_BOOTSTRAP_VERBOSE_FACTS=1 prints the active fact and the inactive
+#          state stays silent.
 #          Set FM_BOOTSTRAP_NETWORK to split this run by whether a step talks to
 #          the network, so a session start can print its digest from local reads
 #          alone and run the network half off the digest's blocking path:
