@@ -128,7 +128,7 @@ It is gated on the grammar being unsupported: in grammar the classifier does mod
 
 The seatbelt also denies process-pattern kills, because an agent's own command line carries its whole task text, so a pattern naming a command from that text matches the agent itself, and a bracketed pattern such as `[s]erver` still matches the unbracketed text.
 The denied shapes are `pkill` or `pgrep` with a full-command-line flag (`-f`, a short-flag cluster containing `f` such as `-fl` or `-af`, or `--full`) and a `ps ... | grep ...` search.
-`pkill -f` is denied outright.
+`pkill -f` is denied outright, including inside loop and conditional grammar the classifier does not model, where the raw text is scanned for a `pkill` word carrying such a flag.
 A `pgrep -f` or `ps | grep` search is denied when its output reaches a kill: `kill` or `xargs kill` later in the same pipeline, or `kill $(...)` around the search.
 A kill of a recorded pid, a `ps | grep` with no kill, and a `ps -p <pid> | grep ... && kill <pid>` sequence stay allowed.
 A search whose result is stored in a variable or consumed across a loop is not modelled.
@@ -248,7 +248,7 @@ Every native-path automatic marker was present and every deny sentinel remained 
 
 `tests/fm-arm-pretool-check.test.sh` owns the adversarial acceptance matrix.
 Every row runs through Codex-shaped stdin, Claude-shaped stdin, Grok-shaped stdin, OpenCode-shaped CLI, and Pi-shaped CLI entry forms.
-The suite also verifies real newline bytes, direct classifier reason codes, comments, heredoc data, malformed and unsupported protected syntax, constructed dynamic payloads, real-process self-kill patterns, recorded-pid kill allowance, malformed transport fail-open behavior, missing runtime fail-open behavior, output shapes, and exact adapter field forwarding plus exit-2 mapping.
+The suite also verifies real newline bytes, direct classifier reason codes, comments, heredoc data, malformed and unsupported protected syntax, constructed dynamic payloads, self-kill patterns, the recorded-pid remedy, recorded-pid kill allowance, malformed transport fail-open behavior, missing runtime fail-open behavior, output shapes, and exact adapter field forwarding plus exit-2 mapping.
 
 Run:
 

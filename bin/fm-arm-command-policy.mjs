@@ -730,8 +730,16 @@ function isWatcherPgrep(position, context) {
 const FULL_COMMAND_LINE_FLAG = /^-[A-Za-z0-9]*f[A-Za-z0-9]*$/;
 const GREP_COMMANDS = ["grep", "egrep", "fgrep"];
 
-function matchesFullCommandLine(args) {
-  return args.some((word) => word.value === "--full" || FULL_COMMAND_LINE_FLAG.test(word.value));
+function matchesFullCommandLine(values) {
+  return values.some((value) => value === "--full" || FULL_COMMAND_LINE_FLAG.test(value));
+}
+
+function rawMentionsFullCommandLineKill(command) {
+  return normalizeLineContinuations(command).split(/[;&|\n]+/).some((segment) => {
+    const words = segment.trim().split(/\s+/);
+    const verb = words.findIndex((word) => basename(word) === "pkill");
+    return verb >= 0 && matchesFullCommandLine(words.slice(verb + 1));
+  });
 }
 
 function isKillSink(commandName, args) {
@@ -842,7 +850,7 @@ function analyzeProgram(command, context, depth = 0) {
     const commandName = basename(executable);
     const args = position.words.slice(position.index + 1);
     if (commandName === "pkill" && args.some((word) => /fm-watch/.test(word.value) || wordReferencesAny(word, nodeContext.watcherPatterns))) broadKill = true;
-    const fullCommandLine = matchesFullCommandLine(args);
+    const fullCommandLine = matchesFullCommandLine(args.map((word) => word.value));
     if (commandName === "pkill" && fullCommandLine) selfKill = true;
     if (!["|", "|&"].includes(program.separators[nodeIndex - 1])) pipeline = { ps: false, search: false };
     if (commandName === "ps") pipeline.ps = true;
@@ -878,10 +886,11 @@ function analyzeProgram(command, context, depth = 0) {
   const protectedFound = directProtected || nestedProtected || unclassifiableProtected;
   if (unclassifiableProtected) unsupported = true;
   const broadKillFound = broadKill || (unsupported && rawMentionsBroadKill(command));
+  const selfKillFound = selfKill || (unsupported && rawMentionsFullCommandLineKill(command));
   if (unsupported && (protectedFound || rawMentionsProtected(command) || broadKillFound)) {
-    return { error: "unsupported compound grammar", protectedFound: true, broadKill: broadKillFound, selfKill, patternSearch, pgrepWatcher, watcherPids: activeContext.watcherPids, program, nodeInfos };
+    return { error: "unsupported compound grammar", protectedFound: true, broadKill: broadKillFound, selfKill: selfKillFound, patternSearch, pgrepWatcher, watcherPids: activeContext.watcherPids, program, nodeInfos };
   }
-  return { error: "", protectedFound, directProtected, nestedProtected, broadKill: broadKillFound, selfKill, patternSearch, pgrepWatcher, watcherPids: activeContext.watcherPids, program, nodeInfos };
+  return { error: "", protectedFound, directProtected, nestedProtected, broadKill: broadKillFound, selfKill: selfKillFound, patternSearch, pgrepWatcher, watcherPids: activeContext.watcherPids, program, nodeInfos };
 }
 
 function xModePathAllowed(value, home) {

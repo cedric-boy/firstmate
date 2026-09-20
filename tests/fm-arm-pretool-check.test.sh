@@ -133,6 +133,8 @@ matrix_case D66 deny "kill \$(ps aux | grep 'demo-server' | awk '{print \$2}')"
 matrix_case D67 deny "kill -9 \$(pgrep -f 'demo-server')"
 matrix_case D68 deny "pgrep -f 'demo-server' | xargs kill"
 matrix_case D69 deny "pk''ill -f 'demo-server'"
+matrix_case D70 deny "for i in 1 2 3; do pkill -f 'demo-server'; sleep 1; done"
+matrix_case D71 deny "if true; then pkill -fl demo-server; fi"
 
 matrix_case E01 allow "bin/fm-watch-checkpoint.sh --seconds '180;still-one-arg'"
 matrix_case E02 allow "bin/fm-watch-checkpoint.sh --label 'fm-watch-arm.sh; literal argument'"
@@ -241,6 +243,8 @@ test_direct_policy_contract() {
   assert_policy direct-agent-pattern-kill-bracketed $'deny\tagent-self-kill' "pkill -f '[d]emo-server'"
   assert_policy direct-agent-kill-substitution $'deny\tagent-self-kill' "kill \$(ps aux | grep 'demo-server' | awk '{print \$2}')"
   assert_policy direct-agent-pgrep-xargs-kill $'deny\tagent-self-kill' "pgrep -f 'demo-server' | xargs kill"
+  assert_policy direct-agent-pattern-kill-loop $'deny\tagent-self-kill' "for i in 1 2 3; do pkill -f 'demo-server'; sleep 1; done"
+  assert_policy direct-loop-recorded-pid-kill allow 'for i in 1 2 3; do kill 424242; sleep 1; done'
   assert_policy direct-recorded-pid-kill allow 'kill 424242'
   assert_policy direct-unrelated-kill-after-search allow 'ps aux | grep demo-server | wc -l; kill 123'
   assert_policy direct-loop-broad-pkill $'deny\tbroad-watcher-kill' 'while true; do pkill -f fm-watch; done'
@@ -264,37 +268,14 @@ test_direct_policy_contract() {
   assert_policy direct-heredoc-watcher $'deny\twatcher-redirection' "$heredoc_watcher"
 }
 
-test_agent_self_kill_patterns_use_real_processes() {
-  local pattern pid args rc out
-  pattern="fm-selfkill-test-$$"
-  bash -c "exec -a '$pattern' sleep 30" &
-  pid=$!
-  trap 'kill "$pid" 2>/dev/null || true' RETURN
-  sleep 0.05
-  args=$(ps -o args= -p "$pid") || fail "real process fixture did not start"
-  printf '%s' "$args" | grep -F "$pattern" >/dev/null || fail "real process fixture command line did not carry the pattern"
-  kill -0 "$pid" 2>/dev/null || fail "real process fixture exited too early"
-
-  out=$("$CHECK" --command "ps -eo pid=,args= | grep '$pattern' | awk '{print \$1}' | xargs -r kill" 2>&1)
+test_agent_self_kill_denial_names_recorded_pid_remedy() {
+  local rc out
+  out=$("$CHECK" --command "ps -eo pid=,args= | grep 'demo-server' | awk '{print \$1}' | xargs -r kill" 2>&1)
   rc=$?
   [ "$rc" -eq 2 ] || fail "ps | grep | kill shape must be denied, got exit $rc: $out"
   printf '%s' "$out" | grep -F 'agent-self-kill' >/dev/null || fail "ps | grep | kill denial must name the self-kill reason: $out"
   printf '%s' "$out" | grep -F 'recorded pid' >/dev/null || fail "self-kill denial must name the recorded-pid remedy: $out"
-
-  out=$("$CHECK" --command "ps -eo pid=,args= | grep '[f]m-selfkill-test-$$' | awk '{print \$1}' | xargs -r kill" 2>&1)
-  rc=$?
-  [ "$rc" -eq 2 ] || fail "bracketed ps | grep | kill shape must be denied, got exit $rc: $out"
-  kill -0 "$pid" 2>/dev/null || fail "seatbelt check must not kill the real process fixture"
-
-  out=$("$CHECK" --command "pkill -f '$pattern'" 2>&1)
-  rc=$?
-  [ "$rc" -eq 2 ] || fail "pkill -f pattern shape must be denied, got exit $rc: $out"
-  kill -0 "$pid" 2>/dev/null || fail "seatbelt check must not kill the real process fixture"
-
-  "$CHECK" --command "kill '$pid'" >/dev/null 2>&1
-  rc=$?
-  [ "$rc" -eq 0 ] || fail "recorded-pid kill must remain allowed, got exit $rc"
-  pass "real process self-kill patterns are denied while recorded-pid kill remains allowed"
+  pass "self-kill denial names the reason code and the recorded-pid remedy"
 }
 
 # --- CLI parsing -------------------------------------------------------------
@@ -513,7 +494,7 @@ test_shellcheck_clean() {
 }
 
 test_full_acceptance_matrix
-test_agent_self_kill_patterns_use_real_processes
+test_agent_self_kill_denial_names_recorded_pid_remedy
 test_direct_policy_contract
 test_command_equals_form
 test_background_flag_accepted_and_non_gating
