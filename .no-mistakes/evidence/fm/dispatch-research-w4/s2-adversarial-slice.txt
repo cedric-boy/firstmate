@@ -1,0 +1,20 @@
+### S2: adversarial briefs keep whole task text
+== brief a
+ROOT-CAUSE-MARKER      sent=1
+SPEC-MARKER            sent=1
+INTENT-TAIL-MARKER     sent=0
+SPEC-TAIL-MARKER       sent=0
+make test              sent=0
+shell comment inside   sent=0
+SCAFFOLD-MARKER        sent=0
+== brief b
+ROOT-CAUSE-MARKER      sent=0
+SPEC-MARKER            sent=0
+INTENT-TAIL-MARKER     sent=1
+SPEC-TAIL-MARKER       sent=1
+make test              sent=1
+shell comment inside   sent=1
+SCAFFOLD-MARKER        sent=0
+== headingless brief sent whole
+Just fix the pager, no headings here.
+

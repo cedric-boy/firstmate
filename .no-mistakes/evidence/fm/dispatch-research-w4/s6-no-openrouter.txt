@@ -1,0 +1,13 @@
+### S6: no OpenRouter path for Jev in changed/resolver files
+resolver hits (expect none):
+89:# A versioned ID, not the jev-latest alias: the floors are tuned against one
+docs hits for jev-latest/openrouter near Jev in diff:
+--- OpenRouter env vars set + no key: still off, and with key request goes to typesafe only
+  status: clear
+  model: jev-1.13.0   latency_ms: 5   tokens: 812/60
+exit=0
+urls hit:
+https://api.typesafe.ai/v1/systemone
+---- resolver contact with OPENROUTER only, no TYPESAFE key:
+dispatch-resolve: off (TYPESAFE_API_KEY absent from the environment and /tmp/fm-drive.8hmZdN/home/.env)
+urls after (unchanged, 1 line): 1

@@ -1,0 +1,44 @@
+### S4: journal
+lines: 11  perms: 600 dir: 775
+first line:
+{
+  "ts": "2026-09-20T21:02:03Z",
+  "brief": "/tmp/fm-drive.8hmZdN/home/data/t1/brief.md",
+  "project": "pager",
+  "model": "jev-1.13.0",
+  "latency_ms": 21,
+  "tokens": {
+    "input_tokens": 812,
+    "output_tokens": 60
+  },
+  "rule": "rule_4",
+  "confidence": 0.9,
+  "probabilities": {
+    "rule_1": 0.01,
+    "rule_2": 0.01,
+    "rule_3": 0.01,
+    "rule_4": 0.96,
+    "default": 0.01
+  },
+  "status": "clear",
+  "reason": null,
+  "profile": {
+    "harness": "cursor",
+    "model": "cursor-grok-4.6-medium"
+  }
+}
+keys of every line:
+     11 ["brief","confidence","latency_ms","model","probabilities","profile","project","reason","rule","status","tokens","ts"]
+key/brief-text leaked (expect 0): 0
+--- error outcome appends nothing
+dispatch-resolve: error (response is not a rule Choice answer)
+  status: error
+exit=0
+lines before=11 after=11
+--- unwritable journal: same outcome, one stderr line, exit 0
+dispatch-resolve: journal not written (/tmp/fm-drive.8hmZdN/ro/sub/dispatch-resolve.jsonl)
+  status: clear
+exit=0
+--- off: no key
+dispatch-resolve: off (TYPESAFE_API_KEY absent from the environment and /tmp/fm-drive.8hmZdN/home/.env)
+exit=0 (stdout above must be empty)

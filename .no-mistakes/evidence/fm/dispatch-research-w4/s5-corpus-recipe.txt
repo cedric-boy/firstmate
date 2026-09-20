@@ -1,0 +1,11 @@
+### S5: documented corpus recipe, verbatim, from a scratch home
+recipe:
+scratch=$(mktemp -d)
+while IFS=$'\t' read -r brief want_rule; do
+  FM_STATE_OVERRIDE="$scratch" bin/fm-dispatch-resolve.sh "data/dispatch-eval/$brief" --project eval 2>/dev/null |
+...
+b1.md	want=rule_4	got=rule_4	conf=0.9	status=clear	--harness 'cursor' --model 'cursor-grok-4.6-medium'
+b2.md	want=rule_3	got=rule_4	conf=0.9	status=clear	--harness 'cursor' --model 'cursor-grok-4.6-medium'
+briefs=2 rule_match=1 clear=2
+home journal exists after corpus run? (expect no):
+ls: cannot access '/tmp/fm-drive.8hmZdN/corpushome/state/dispatch-resolve.jsonl': No such file or directory

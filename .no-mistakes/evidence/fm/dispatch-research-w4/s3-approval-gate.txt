@@ -1,0 +1,29 @@
+### S3: approval: captain (rule_3) gate
+--- top rule_4=.45, gated rule_3=.35, conf .45 (below floor) -> expect escalate
+  status: escalate
+  reason: approval-gated rule rule_3 carries probability 0.35 (floor 0.2) without being the top choice
+exit=0
+--- gated rule_3 TOP at .45, conf .45 (below floor) -> expect escalate
+  status: escalate
+  reason: rule requires the captain's explicit approval before dispatch
+exit=0
+--- gated rule_3=.15 (<0.2), conf .45 -> expect ambiguous
+  status: ambiguous
+  reason: confidence 0.45 below floor 0.6
+exit=0
+--- gated rule_3=.2 exactly behind default top, conf .9 -> escalate
+  status: escalate
+  reason: approval-gated rule rule_3 carries probability 0.20 (floor 0.2) without being the top choice
+exit=0
+--- gated rule_3=.19 behind rule_4 conf .9 -> clear (no escalation)
+  status: clear
+  profile: --harness 'cursor' --model 'cursor-grok-4.6-medium'
+exit=0
+--- gated rule_3 top at .96 conf .9 -> escalate, gated reason wording
+  status: escalate
+  reason: rule requires the captain's explicit approval before dispatch
+exit=0
+--- no gated mass; rule_4 .45 conf .45 -> ambiguous (floor unchanged)
+  status: ambiguous
+  reason: confidence 0.45 below floor 0.6
+exit=0
