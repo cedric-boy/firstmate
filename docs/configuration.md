@@ -531,7 +531,7 @@ The tool never replaces firstmate's judgment, `quota-array-dispatch`, the captai
 By accepted design, a `clear` result does not enforce catalog/authentication, reasoning-class, or completion-runway gates.
 Firstmate passes its profile line unless it states a reason to override, such as the brief's reasoning class or an eligible-unranked-candidate note; every non-clear result returns to the full existing intake.
 
-Every answered resolve appends one line to the private journal `state/dispatch-resolve.jsonl`: the brief path, project, answering model ID, latency, tokens, matched rule, confidence, probabilities, status, reason, and chosen profile, and never brief text or the key.
+Every answered resolve appends one line to the private journal `state/dispatch-resolve.jsonl`: the timestamp, brief path, project, answering model ID, latency, tokens, matched rule, confidence, probabilities, status, reason, and chosen profile, and never brief text or the key.
 Off, error, and no-rule outcomes append nothing, a write failure is one stderr line that never changes the outcome, and the script header owns the exact fields.
 The journal is what a later floor or threshold change is tuned against.
 It also drives the shadow phase: until it holds 30 lines, firstmate still reasons out its own intake and treats a `clear` profile as a comparison rather than a default, which is the standing reason to override it.
