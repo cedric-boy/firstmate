@@ -1,0 +1,13 @@
+## Codex schema (tool_input.command), Grok schema (toolInput.command), Cursor, CLI mode
+codex-shape rc=2 stdout-json-decision=deny stderr={"hookSpecificOutput":{"hookEventName":"
+grok-shape rc=2 stdout={"decision":"deny","reason":"[agent-self-kill] process-pattern kills are forbidden because the pattern can match the invoking agent's own command line, even when the pattern is bracketed; kill a recor
+cursor rc=0 stdout={"permission":"deny","user_message":"[agent-self-kill] process-pattern kills are forbidden because the pattern can match the invoking agent's own command line, even when the pattern is bracketed; kill a recorded pid instead"}
+cli(opencode/pi) rc=2 [agent-self-kill] process-pattern kills are forbidden becaus
+cli allow rc=0
+
+## Known/documented gaps (variable capture, loop consumption) - informational
+rc=0 PIDS=$(pgrep -f vite); kill $PIDS
+rc=0 for p in $(pgrep -f vite); do kill $p; done
+
+## Fast path: kill-free commands never need node
+no-node, benign: rc=0

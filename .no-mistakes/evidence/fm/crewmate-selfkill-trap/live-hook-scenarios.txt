@@ -1,0 +1,78 @@
+PASS deny  got=deny  rc=2 stdout=0B | reported shape: ps|grep|awk|xargs kill w/ task text
+     cmd: ps aux | grep 'npm run dev -- --port 4173' | grep -v grep | awk '{print $2}' | xargs kill
+     [agent-self-kill] process-pattern kills are forbidden because the pattern can match the invoking agent's own command line, even when the pat
+PASS deny  got=deny  rc=2 stdout=0B | reported shape: kill $(ps|grep|awk)
+     cmd: kill -9 $(ps aux | grep 'npm run dev -- --port 4173' | awk '{print $2}')
+     [agent-self-kill] process-pattern kills are forbidden because the pattern can match the invoking agent's own command line, even when the pat
+PASS deny  got=deny  rc=2 stdout=0B | pkill -f demo server
+     cmd: pkill -f 'npm run dev -- --port 4173'
+     [agent-self-kill] process-pattern kills are forbidden because the pattern can match the invoking agent's own command line, even when the pat
+PASS deny  got=deny  rc=2 stdout=0B | pkill -9 -f
+     cmd: pkill -9 -f 'vite --port 4173'
+     [agent-self-kill] process-pattern kills are forbidden because the pattern can match the invoking agent's own command line, even when the pat
+PASS deny  got=deny  rc=2 stdout=0B | pkill -fl cluster
+     cmd: pkill -fl 'vite'
+     [agent-self-kill] process-pattern kills are forbidden because the pattern can match the invoking agent's own command line, even when the pat
+PASS deny  got=deny  rc=2 stdout=0B | pkill --full
+     cmd: pkill --full vite
+     [agent-self-kill] process-pattern kills are forbidden because the pattern can match the invoking agent's own command line, even when the pat
+PASS deny  got=deny  rc=2 stdout=0B | bracketed pkill (still self-match) 
+     cmd: pkill -f '[v]ite --port 4173'
+     [agent-self-kill] process-pattern kills are forbidden because the pattern can match the invoking agent's own command line, even when the pat
+PASS deny  got=deny  rc=2 stdout=0B | pgrep -f | xargs kill
+     cmd: pgrep -f 'vite --port 4173' | xargs kill
+     [agent-self-kill] process-pattern kills are forbidden because the pattern can match the invoking agent's own command line, even when the pat
+PASS deny  got=deny  rc=2 stdout=0B | kill $(pgrep -f)
+     cmd: kill $(pgrep -f 'vite --port 4173')
+     [agent-self-kill] process-pattern kills are forbidden because the pattern can match the invoking agent's own command line, even when the pat
+PASS deny  got=deny  rc=2 stdout=0B | loop wrapper pkill -f
+     cmd: for i in 1 2 3; do pkill -f 'vite'; sleep 1; done
+     [agent-self-kill] process-pattern kills are forbidden because the pattern can match the invoking agent's own command line, even when the pat
+PASS deny  got=deny  rc=2 stdout=0B | if wrapper pkill -f
+     cmd: if true; then pkill -f vite; fi
+     [agent-self-kill] process-pattern kills are forbidden because the pattern can match the invoking agent's own command line, even when the pat
+PASS deny  got=deny  rc=2 stdout=0B | bash -c wrapper
+     cmd: bash -c "pkill -f 'vite --port 4173'"
+     [agent-self-kill] process-pattern kills are forbidden because the pattern can match the invoking agent's own command line, even when the pat
+PASS deny  got=deny  rc=2 stdout=0B | quoted-verb obfuscation pk''ill
+     cmd: pk''ill -f vite
+     [agent-self-kill] process-pattern kills are forbidden because the pattern can match the invoking agent's own command line, even when the pat
+PASS allow got=allow rc=0 stdout=0B | recorded pid kill
+     cmd: kill 424242
+     
+PASS allow got=allow rc=0 stdout=0B | recorded pid in loop
+     cmd: for i in 1 2 3; do kill 424242; sleep 1; done
+     
+PASS allow got=allow rc=0 stdout=0B | recorded pid via variable
+     cmd: npm run dev & echo $! > /tmp/dev.pid; kill "$(cat /tmp/dev.pid)"
+     
+PASS allow got=allow rc=0 stdout=0B | ps|grep read-only
+     cmd: ps aux | grep 'vite'
+     
+PASS allow got=allow rc=0 stdout=0B | ps|grep|wc; unrelated kill
+     cmd: ps aux | grep vite | wc -l; kill 123
+     
+PASS allow got=allow rc=0 stdout=0B | ps -p | grep -q && kill pid
+     cmd: ps -p 1234 | grep -q node && kill 1234
+     
+PASS allow got=allow rc=0 stdout=0B | pgrep -f | wc (no kill)
+     cmd: pgrep -f vite | wc -l
+     
+PASS allow got=allow rc=0 stdout=0B | pgrep -x exact name
+     cmd: pgrep -x vite
+     
+PASS allow got=allow rc=0 stdout=0B | pkill without -f (name match)
+     cmd: pkill vite
+     
+PASS allow got=allow rc=0 stdout=0B | echo data mentioning pkill -f
+     cmd: echo 'use pkill -f carefully'
+     
+PASS allow got=allow rc=0 stdout=0B | unrelated ls
+     cmd: ls -la
+     
+PASS deny  got=deny  rc=2 stdout=0B | watcher regression: broad fm-watch kill still denied
+     cmd: pkill -f fm-watch
+     [broad-watcher-kill] a broad process kill targeting the firstmate watcher is forbidden
+PASS allow got=allow rc=0 stdout=0B | watcher regression: blessed arm still allowed
+     cmd: bin/fm-watch-arm.sh
+     

@@ -1,0 +1,14 @@
+demo server pid=966547  fake-agent pid=966548
+--- unbracketed ps|grep on the demo start command (what the workers ran) matches:
+ 966547 fmlab-demo-server-966543 --port 4173 60
+ 966548 fake-agent Task: start the demo with fmlab-demo-server-966543 --port 4173 then clean up 60
+--- bracketed pattern ALSO matches the agent, because its task text has the unbracketed string:
+ 966547 fmlab-demo-server-966543 --port 4173 60
+ 966548 fake-agent Task: start the demo with fmlab-demo-server-966543 --port 4173 then clean up 60
+--- the seatbelt verdict for exactly that cleanup command:
+exit=2 (2 = deny)
+[agent-self-kill] process-pattern kills are forbidden because the pattern can match the invoking agent's own command line, even when the pattern is bracketed; kill a recorded pid instead
+--- recommended remedy (recorded pid) is allowed and kills only the server:
+exit=0 (0 = allow)
+server gone
+fake-agent survived
